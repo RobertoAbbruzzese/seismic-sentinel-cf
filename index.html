@@ -1,0 +1,3791 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0d0d0d">
+<meta name="description" content="Campi Flegrei Seismic Sentinel - PWA Edge-Computed v1.8.5">
+<title>⚠️ Seismic Sentinel — Campi Flegrei PWA v1.8.5</title>
+<!--
+  Campi Flegrei Seismic Sentinel PWA v1.8.5 — "MANIFEST FIX"
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ [M1] FIX MANIFEST: rimosso il <link rel="manifest"> data-URI statico      ║
+        (JSON con data-URI annidati → errori di encoding → Syntax error).    ║
+  ║      Il manifest viene ora generato a runtime come Blob URL con JSON      ║
+  ║      pulito costruito via JSON.stringify (nessun encoding manuale).       ║
+  ║ RESTO INVARIATO da v1.8.4 (OV CORS-safe, GPS robusto, sens v2.2, ecc.).   ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+  MIT License 2026 — Non sostituisce le allerte ufficiali della Protezione Civile.
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║  MODALITÀ PRO (OPZIONALE) — Cloudflare Worker Personale                  ║
+  ╠══════════════════════════════════════════════════════════════════════════╣
+    DEPLOY (5 minuti):                                                      ║
+    1. npm install -g wrangler                                              ║
+    2. wrangler login                                                       ║
+    3. Crea cartella, salva proxy-ingv.js + wrangler.toml (codice sotto)    ║
+    4. wrangler deploy                                                      ║
+    5. Copia URL (es: https://proxy-ingv.tuonome.workers.dev)               ║
+    6. Incollalo nella card "Modalità Pro" nel Pannello                     ║
+  ══════════════════════════════════════════════════════════════════════════╣
+    // proxy-ingv.js (v1.8.4: /trigger + /ovstato)                          ║
+  ║  const CORS = {                                                          ║
+  ║    'Access-Control-Allow-Origin': '*',                                   ║
+  ║    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',                 ║
+    'Access-Control-Allow-Headers': 'Content-Type, Accept',               ║
+  ║  };                                                                      ║
+  ║  function hav(a1, o1, a2, o2) {                                          ║
+  ║    const R = 6371, rd = (x) => x * Math.PI / 180;                        ║
+      const dLa = rd(a2 - a1), dLo = rd(o2 - o1);                           ║
+  ║    const a = Math.sin(dLa/2)**2 + Math.cos(rd(a1))*Math.cos(rd(a2))*Math.sin(dLo/2)**2;
+  ║    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));            ║
+    }                                                                       ║
+    export default {                                                        ║
+      async fetch(request) {                                                ║
+        const url = new URL(request.url);                                   ║
+        if (request.method === 'OPTIONS')                                   ║
+          return new Response(null, {status:204, headers:CORS});            ║
+  ║      if (url.pathname.endsWith('/ovstato')) {                            ║
+  ║        try {                                                             ║
+  ║          const r = await fetch(                                          ║
+  ║            'https://www.ov.ingv.it/index.php/flegrei-stato-attuale',    ║
+  ║            { headers: { 'User-Agent': 'SeismicSentinel/1.8.5' } });     ║
+            const t = await r.text();                                       ║
+  ║          return new Response(t, { status: r.status, headers: { ...CORS, ║
+              'Content-Type': 'text/html; charset=utf-8',                  ║
+              'Cache-Control': 'public, max-age=1800' } });                ║
+  ║        } catch (e) {                                                     ║
+  ║          return new Response('', { status: 502, headers: CORS });       ║
+  ║        }                                                                 ║
+  ║      }                                                                   ║
+        if (url.pathname.endsWith('/trigger') && request.method === 'POST') {
+  ║        const b = await request.json();                                   ║
+          const now = Date.now();                                           ║
+  ║        const arr = (globalThis.trigs = globalThis.trigs || []);          ║
+          while (arr.length && now - arr[0].t > 10000) arr.shift();         ║
+  ║        arr.push({ lat: b.lat, lon: b.lon, t: now, dev: b.dev });         ║
+  ║        const near = arr.filter(x => (now - x.t) <= 10000 &&              ║
+  ║          hav(x.lat, x.lon, b.lat, b.lon) <= 10);                         ║
+          const n = new Set(near.map(x => x.dev)).size;                     ║
+          return new Response(JSON.stringify({ n }), {                      ║
+  ║          status: 200, headers: { ...CORS, 'Content-Type': 'application/json',
+  ║          'Cache-Control': 'no-store' } });                               ║
+  ║      }                                                                   ║
+        const targetPath = url.pathname.replace(/^\//, '');                 ║
+        if (!targetPath.startsWith('fdsnws/')) {                            ║
+  ║        return new Response(JSON.stringify({error:'Not allowed'}),        ║
+            {status:403, headers:{...CORS,'Content-Type':'application/json'}});
+  ║      }                                                                   ║
+        const targetURL = 'https://webservices.ingv.it/'                    ║
+                          + targetPath + url.search;                        ║
+        try {                                                               ║
+          const response = await fetch(targetURL, {                         ║
+            headers:{'User-Agent':'SeismicSentinel/1.8.5',                  ║
+                     'Accept':'application/json, text/plain, */*'} });      ║
+          const data = await response.text();                               ║
+          return new Response(data, {                                       ║
+            status: response.status,                                        ║
+            headers: { ...CORS,                                             ║
+              'Content-Type': response.headers.get('Content-Type')         ║
+  ║                            || 'application/json',                       ║
+              'Cache-Control': 'public, max-age=30' }                       ║
+          });                                                               ║
+  ║      } catch (e) {                                                       ║
+          return new Response(                                              ║
+            JSON.stringify({error:'INGV unreachable', msg:e.message}),      ║
+            {status:502, headers:{...CORS,'Content-Type':'application/json'}});
+        }                                                                   ║
+  ║    }                                                                     ║
+    };                                                                      ║
+    // wrangler.toml                                                        ║
+    name = "proxy-ingv"                                                     ║
+  ║  main = "proxy-ingv.js"                                                  ║
+  ║  compatibility_date = "2026-01-01"                                       ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+-->
+<!-- [M1] favicon semplice (nessun manifest statico: generato a runtime) -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230d0d0d'/%3E%3Ctext x='50' y='70' font-size='60' text-anchor='middle'%3E%E2%9A%A0%EF%B8%8F%3C/text%3E%3C/svg%3E">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/index.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.0.18/index.min.css">
+
+<style>
+  :root {
+    --bg-0: #0d0d0d;
+    --bg-1: #141414;
+    --bg-2: #1a1a1a;
+    --bg-3: #222222;
+    --green-soft: rgba(16, 185, 129, 0.22);
+    --green-hi: rgba(16, 185, 129, 0.55);
+    --accent: #a78bfa;
+    --accent-hi: #c4b5fd;
+    --fg-0: #f0f0f5;
+    --fg-1: #b0b0c0;
+    --fg-2: #8a8aa0;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --danger-hi: #fca5a5;
+    --ok: #10b981;
+    --p-wave: #06b6d4;
+    --s-wave: #dc2626;
+    --magma: #f97316;
+    --border: rgba(16, 185, 129, 0.22);
+    --border-hi: rgba(16, 185, 129, 0.55);
+    --glow: 0 0 20px rgba(167, 139, 250, 0.4);
+    --radius: 10px;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg-0); color: var(--fg-0); font-family: var(--sans); font-size: 16px; }
+  body { display: flex; flex-direction: column; position: relative; }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  a { color: var(--accent-hi); text-decoration: none; }
+  a.source-link {
+    display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px;
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 6px; color: var(--fg-1); font-size: 13px; line-height: 1.45;
+    transition: all 0.2s; text-decoration: none;
+  }
+  a.source-link:hover, a.source-link:active {
+    background: var(--green-soft); border-color: var(--green-hi); color: var(--fg-0);
+  }
+  a.source-link .src-icon {
+    width: 36px; height: 36px; flex-shrink: 0; border-radius: 7px;
+    background: var(--green-soft); color: var(--accent-hi);
+    display: grid; place-items: center; font-size: 15px;
+  }
+  a.source-link .src-body { flex: 1; min-width: 0; }
+  a.source-link .src-body strong { display: block; color: var(--fg-0); font-size: 13px; margin-bottom: 2px; }
+  a.source-link .src-body .src-url {
+    display: block; font-family: var(--mono); font-size: 10px;
+    color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    margin-top: 2px;
+  }
+  a.source-link .src-body .src-desc { font-size: 12px; color: var(--fg-2); }
+  a.source-link .src-arrow { color: var(--green-hi); font-size: 14px; flex-shrink: 0; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg-1); }
+  ::-webkit-scrollbar-thumb { background: var(--green-hi); border-radius: 3px; }
+
+  header.topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+    border-bottom: 1px solid var(--border); z-index: 50;
+  }
+  header .brand { display: flex; align-items: center; gap: 10px; }
+  header .brand .logo {
+    width: 40px; height: 40px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--green-hi));
+    display: grid; place-items: center; font-size: 19px; box-shadow: var(--glow);
+  }
+  header .brand h1 { font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
+  header .brand .ver { font-size: 10px; color: var(--fg-2); font-family: var(--mono); }
+  header .status { display: flex; gap: 8px; align-items: center; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 10px; border-radius: 20px; font-size: 12px; font-family: var(--mono);
+    background: var(--bg-3); border: 1px solid var(--border);
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-2); }
+  .badge.online .dot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+  .badge.offline .dot { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .icon-btn {
+    width: 44px; height: 44px; border-radius: 8px; display: grid; place-items: center;
+    background: var(--bg-3); color: var(--fg-1); font-size: 17px;
+    transition: all 0.2s;
+  }
+  .icon-btn:hover, .icon-btn:active { background: var(--green-soft); color: var(--accent-hi); border: 1px solid var(--green-hi); }
+
+  nav.tabs {
+    display: flex; background: var(--bg-1); border-bottom: 1px solid var(--border);
+    overflow-x: auto; flex-shrink: 0;
+  }
+  nav.tabs button {
+    flex: 1; min-width: 90px; padding: 12px 8px; font-size: 13px; font-weight: 600;
+    color: var(--fg-1); display: flex; flex-direction: column; align-items: center; gap: 4px;
+    border-bottom: 2px solid transparent; transition: all 0.2s;
+  }
+  nav.tabs button i { font-size: 17px; }
+  nav.tabs button.active { color: var(--accent-hi); border-bottom-color: var(--green-hi); background: var(--green-soft); }
+
+  main { flex: 1; overflow: hidden; position: relative; }
+  .view { position: absolute; inset: 0; overflow-y: auto; padding: 12px; display: none; }
+  .view.active { display: block; }
+  .view.map-view { padding: 0; }
+
+  .card {
+    background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; margin-bottom: 12px;
+  }
+  .card h3 {
+    font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--fg-2); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .card h3 i { color: var(--accent-hi); }
+
+  .sens-btn {
+    flex: 1; padding: 12px 8px; border-radius: 8px; font-weight: 700; font-size: 13px;
+    background: var(--bg-3); color: var(--fg-1); border: 1px solid var(--border);
+    min-height: 46px; transition: all 0.2s;
+  }
+  .sens-btn.active { background: var(--green-soft); color: var(--accent-hi); border-color: var(--green-hi); }
+
+  .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .metric {
+    background: var(--bg-2); padding: 12px; border-radius: 8px; border: 1px solid var(--border);
+  }
+  .metric .label { font-size: 12px; color: var(--fg-2); letter-spacing: 0.3px; font-family: var(--mono); }
+  .metric .value { font-size: 24px; font-weight: 700; font-family: var(--mono); margin-top: 4px; color: var(--fg-0); }
+  .metric .sub { font-size: 12px; color: var(--fg-2); margin-top: 2px; }
+  .metric.alert .value { color: var(--danger-hi); }
+  .metric.alert .label::after { content: " ⚠"; color: var(--danger-hi); }
+  .metric.warn .value { color: var(--warn); }
+  .metric.ok .value { color: var(--ok); }
+  .metric.ok .label::after { content: " ✓"; color: var(--ok); }
+
+  .threshold-card {
+    background: linear-gradient(135deg, var(--green-soft), rgba(167,139,250,0.08));
+    border: 1px solid var(--green-hi); padding: 14px; border-radius: var(--radius);
+    margin-bottom: 12px;
+  }
+  .threshold-card h3 { color: var(--accent-hi); margin-bottom: 8px; }
+  .threshold-main { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .threshold-main .value { font-size: 34px; font-weight: 900; font-family: var(--mono); color: var(--accent-hi); }
+  .threshold-main .label { font-size: 13px; color: var(--fg-1); }
+  .threshold-factors { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .threshold-factor { background: var(--bg-3); padding: 8px; border-radius: 6px; text-align: center; }
+  .threshold-factor .f-label { font-size: 11px; color: var(--fg-2); font-family: var(--mono); }
+  .threshold-factor .f-value { font-size: 17px; font-weight: 700; font-family: var(--mono); color: var(--fg-0); margin-top: 2px; }
+  .threshold-factor .f-unit { font-size: 10px; color: var(--fg-2); }
+  .threshold-factor.critical .f-value { color: var(--danger-hi); }
+  .threshold-factor.warn .f-value { color: var(--warn); }
+  .threshold-formula {
+    margin-top: 10px; padding: 10px; background: var(--bg-0); border-radius: 6px;
+    font-size: 12px; color: var(--fg-1); text-align: center;
+    border: 1px solid var(--border); line-height: 1.5;
+  }
+
+  .matrix-display {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px;
+    font-family: var(--mono); font-size: 11px;
+  }
+  .matrix-display div {
+    background: var(--bg-3); padding: 7px 4px; text-align: center;
+    border-radius: 3px; color: var(--fg-1);
+  }
+
+  canvas.spec, canvas.seismo {
+    width: 100%; height: 90px; background: var(--bg-0); border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+
+  .activate-btn {
+    width: 100%; padding: 18px; font-size: 16px; font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--green-hi));
+    color: #0d0d0d; border-radius: var(--radius); letter-spacing: 0.5px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    box-shadow: var(--glow);
+    transition: all 0.2s;
+    min-height: 56px;
+  }
+  .activate-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(167,139,250,0.6); }
+  .activate-btn.active {
+    background: linear-gradient(135deg, var(--danger), #991b1b);
+    color: #fff;
+    animation: pulse-btn 2s infinite;
+  }
+  @keyframes pulse-btn { 0%,100% { box-shadow: 0 4px 20px rgba(239,68,68,0.4); } 50% { box-shadow: 0 4px 30px rgba(239,68,68,0.8); } }
+
+  .compass-wrap { display: flex; align-items: center; gap: 12px; }
+  .compass {
+    width: 96px; height: 96px; border-radius: 50%;
+    background: radial-gradient(circle, var(--bg-3), var(--bg-2));
+    border: 2px solid var(--green-hi); position: relative;
+    flex-shrink: 0;
+  }
+  .compass .needle {
+    position: absolute; top: 50%; left: 50%; width: 3px; height: 42px;
+    background: linear-gradient(to top, transparent, var(--accent));
+    transform-origin: 50% 100%; transform: translate(-50%, -100%) rotate(0deg);
+    border-radius: 2px; transition: transform 0.15s ease-out;
+  }
+  .compass::before {
+    content: 'N'; position: absolute; top: 2px; left: 50%;
+    transform: translateX(-50%); font-size: 11px; color: var(--accent-hi); font-weight: 700;
+  }
+  .compass-info { flex: 1; font-family: var(--mono); font-size: 12px; color: var(--fg-1); }
+  .compass-info strong { font-size: 20px; color: var(--fg-0); display: block; margin-bottom: 3px; }
+
+  .mini-map { height: 180px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-hi); }
+
+  .mirror-banner {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: linear-gradient(135deg, var(--green-soft), rgba(16,185,129,0.08));
+    border: 1px solid var(--green-hi); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 10px;
+    font-size: 13px; color: var(--fg-1); line-height: 1.5;
+  }
+  .mirror-banner > i { color: var(--ok); font-size: 16px; margin-top: 2px; flex-shrink: 0; }
+  .mirror-banner strong { color: var(--fg-0); }
+  .mirror-link {
+    display: inline-block; font-family: var(--mono); font-size: 11px;
+    background: var(--bg-0); padding: 6px 10px; border-radius: 6px;
+    border: 1px solid var(--border-hi); color: var(--accent-hi);
+  }
+  .mirror-link:active { background: var(--green-soft); }
+
+  .event-list { max-height: 340px; overflow-y: auto; }
+  .event-item {
+    display: flex; align-items: center; gap: 8px; padding: 10px;
+    background: var(--bg-2); border-radius: 6px; margin-bottom: 6px;
+    border-left: 3px solid var(--green-hi); cursor: pointer; transition: background 0.15s;
+  }
+  .event-item:hover, .event-item:active { background: var(--bg-3); }
+  .event-item.strong-quake { border-left-color: var(--danger); }
+  .event-item .mag {
+    width: 44px; height: 44px; border-radius: 6px; display: grid; place-items: center;
+    font-family: var(--mono); font-weight: 700; font-size: 15px;
+    background: var(--bg-3); color: var(--fg-0); flex-shrink: 0;
+  }
+  .event-item .info { flex: 1; font-size: 13px; color: var(--fg-1); min-width: 0; }
+  .event-item .info strong { color: var(--fg-0); font-size: 14px; display: block; margin-bottom: 2px; }
+  .event-item .info .meta { font-family: var(--mono); font-size: 10.5px; color: var(--fg-2); }
+  .ev-badge {
+    display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 10px;
+    font-size: 9px; font-family: var(--mono); letter-spacing: 0.5px; vertical-align: middle;
+  }
+  .ev-badge.strong { background: rgba(239,68,68,0.2); color: var(--danger-hi); border: 1px solid var(--danger); }
+  .ev-badge.off { background: var(--green-soft); color: #a7f3d0; border: 1px solid var(--green-hi); }
+  .micro-toggle {
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+    padding: 10px 12px; margin-top: 8px; border-radius: 6px;
+    background: var(--bg-2); border: 1px dashed var(--border-hi);
+    font-size: 13px; color: var(--fg-1);
+  }
+  .micro-toggle i { transition: transform 0.2s; color: var(--accent-hi); }
+  .micro-list { margin-top: 6px; }
+  .micro-list.hidden { display: none; }
+  .ev-actions { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+  .ev-actions button, .ev-actions a {
+    width: 40px; height: 30px; border-radius: 6px; display: grid; place-items: center;
+    background: var(--bg-3); border: 1px solid var(--border); color: var(--accent-hi);
+    font-size: 13px; text-decoration: none;
+  }
+  .ev-actions button:active { background: var(--green-soft); }
+
+  .ingv-status {
+    display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
+    font-size: 12px; font-family: var(--mono); color: var(--fg-2);
+    margin-bottom: 8px; flex-wrap: wrap;
+  }
+  .ingv-status .gateway-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-2); }
+  .ingv-status.ok .gateway-dot { background: var(--ok); box-shadow: 0 0 4px var(--ok); }
+  .ingv-status.warn .gateway-dot { background: var(--warn); box-shadow: 0 0 4px var(--warn); }
+  .ingv-status.err .gateway-dot { background: var(--danger); box-shadow: 0 0 4px var(--danger); }
+  .ingv-status.loading .gateway-dot { background: var(--accent); animation: pulse 1s infinite; }
+
+  .gps-status {
+    display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
+    font-size: 12px; font-family: var(--mono); color: var(--fg-2);
+    margin-bottom: 8px;
+  }
+  .gps-status .gps-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-2); }
+  .gps-status.ok .gps-dot { background: var(--ok); box-shadow: 0 0 4px var(--ok); }
+  .gps-status.err .gps-dot { background: var(--danger); }
+  .gps-status.warn .gps-dot { background: var(--warn); }
+  .gps-status.loading .gps-dot { background: var(--accent); animation: pulse 1s infinite; }
+
+  .official-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 10px; font-family: var(--mono); letter-spacing: 0.5px;
+    background: var(--green-soft); color: #a7f3d0; border: 1px solid var(--green-hi);
+    margin-left: 6px;
+  }
+
+  .pro-card {
+    background: linear-gradient(135deg, rgba(167, 139, 250, 0.12), rgba(16, 185, 129, 0.08));
+    border: 1px dashed var(--accent); padding: 14px; border-radius: var(--radius);
+    margin-bottom: 12px;
+  }
+  .pro-card h3 { color: var(--accent-hi); }
+  .pro-card.collapsed .pro-body { display: none; }
+  .pro-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; padding: 4px 0;
+  }
+  .pro-body {
+    margin-top: 10px; font-size: 13px; color: var(--fg-1); line-height: 1.6;
+  }
+  .pro-body code {
+    background: var(--bg-0); padding: 2px 6px; border-radius: 3px;
+    font-family: var(--mono); font-size: 11px; color: var(--accent-hi);
+    border: 1px solid var(--border); display: inline-block; margin: 2px 0;
+    word-break: break-all;
+  }
+  .pro-body ol { padding-left: 20px; margin: 8px 0; }
+  .pro-body li { margin-bottom: 4px; }
+  .pro-status {
+    display: flex; align-items: center; gap: 8px; padding: 8px;
+    background: var(--bg-0); border-radius: 6px; margin-top: 8px;
+    border: 1px solid var(--border); font-size: 12px;
+  }
+  .pro-status .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-2); }
+  .pro-status.configured .status-dot { background: var(--ok); box-shadow: 0 0 4px var(--ok); }
+  .pro-status.unconfigured .status-dot { background: var(--fg-2); }
+
+  #mapFull { width: 100%; height: 100%; background: var(--bg-0); }
+  .legend-float {
+    position: absolute; bottom: 12px; left: 12px; z-index: 400;
+    background: rgba(13,13,13,0.92); padding: 12px; border-radius: 8px;
+    border: 1px solid var(--green-hi); font-size: 13px; max-width: 240px;
+  }
+  .legend-float h4 { font-size: 13px; color: var(--accent-hi); margin-bottom: 6px; }
+  .legend-float .li { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--fg-1); }
+  .legend-float .sw { width: 15px; height: 15px; border-radius: 3px; flex-shrink: 0; }
+
+  #threeContainer { width: 100%; height: 100%; position: relative; }
+  #threeContainer canvas { display: block; width: 100% !important; height: 100% !important; }
+  .three-hud {
+    position: absolute; top: 10px; left: 10px; right: 10px; z-index: 10;
+    display: flex; justify-content: space-between; pointer-events: none; flex-wrap: wrap; gap: 6px;
+  }
+  .three-hud .hud-box {
+    background: rgba(13,13,13,0.85); padding: 6px 10px; border-radius: 6px;
+    font-family: var(--mono); font-size: 12px; border: 1px solid rgba(167,139,250,0.4);
+    color: #fff;
+  }
+  .three-legend {
+    position: absolute; bottom: 10px; left: 10px; z-index: 10;
+    background: rgba(13,13,13,0.9); padding: 10px 12px; border-radius: 8px;
+    border: 1px solid rgba(167,139,250,0.4); font-size: 13px; max-width: 300px; color: #fff;
+  }
+  .three-legend-toggle {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    width: 100%; font-size: 13px; color: #c4b5fd; font-weight: 700;
+    min-height: 28px;
+  }
+  .three-legend-toggle i { transition: transform 0.2s; }
+  .three-legend.collapsed .three-legend-body { display: none; }
+  .three-legend.collapsed { max-width: 210px; }
+  .three-loading {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    background: var(--bg-0); color: var(--fg-1); font-family: var(--mono); font-size: 13px;
+    z-index: 5;
+  }
+  .three-loading.hidden { display: none; }
+
+  .step-list { counter-reset: step; }
+  .step {
+    counter-increment: step; position: relative; padding: 16px 14px 16px 54px;
+    background: var(--bg-2); border-radius: 8px; margin-bottom: 8px;
+    border-left: 3px solid var(--green-hi);
+  }
+  .step::before {
+    content: counter(step); position: absolute; left: 12px; top: 16px;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent); color: #0d0d0d; display: grid; place-items: center;
+    font-weight: 700; font-family: var(--mono);
+  }
+  .step h4 { font-size: 15px; color: var(--fg-0); margin-bottom: 4px; }
+  .step p { font-size: 14px; color: var(--fg-1); line-height: 1.5; }
+
+  .emergency-num {
+    display: flex; align-items: center; gap: 12px; padding: 16px;
+    background: var(--bg-2); border-radius: 8px; margin-bottom: 8px;
+    border-left: 4px solid var(--danger); text-decoration: none;
+    transition: all 0.2s;
+  }
+  .emergency-num:hover { background: var(--green-soft); border-left-color: var(--green-hi); }
+  .emergency-num .num-icon {
+    width: 48px; height: 48px; border-radius: 10px;
+    background: rgba(239,68,68,0.15); color: var(--danger-hi);
+    display: grid; place-items: center; font-size: 22px;
+  }
+  .emergency-num .num-info { flex: 1; }
+  .emergency-num .num-info strong { display: block; color: var(--fg-0); font-size: 15px; }
+  .emergency-num .num-info span { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--danger-hi); }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000;
+    display: none; align-items: center; justify-content: center; padding: 20px;
+    backdrop-filter: blur(6px);
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--bg-1); border: 1px solid var(--border); border-radius: 14px;
+    max-width: 480px; width: 100%; max-height: 85vh; overflow-y: auto;
+    padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); position: relative;
+  }
+  .modal h2 { font-size: 20px; margin-bottom: 12px; color: var(--accent-hi); display: flex; align-items: center; gap: 8px; }
+  .modal .close-x {
+    position: absolute; top: 12px; right: 12px; width: 36px; height: 36px;
+    border-radius: 50%; background: var(--bg-3); display: grid; place-items: center;
+  }
+  .modal-body { font-size: 15px; color: var(--fg-1); line-height: 1.6; }
+  .modal-body p { margin-bottom: 10px; }
+  .modal-body strong { color: var(--fg-0); }
+  .btn-primary {
+    width: 100%; padding: 14px; background: linear-gradient(135deg, var(--accent), var(--green-hi));
+    color: #0d0d0d; border-radius: 8px; font-weight: 700; margin-top: 14px; font-size: 15px;
+    min-height: 50px;
+  }
+  .btn-primary:hover { box-shadow: var(--glow); }
+
+  .alarm-overlay {
+    position: fixed; inset: 0; z-index: 2000; display: none;
+    background: radial-gradient(circle at center, #7f1d1d, #450a0a);
+    flex-direction: column; padding: 20px; color: #fff;
+    animation: alarm-flash 0.8s infinite;
+  }
+  @keyframes alarm-flash {
+    0%,100% { background: radial-gradient(circle at center, #7f1d1d, #450a0a); }
+    50% { background: radial-gradient(circle at center, #991b1b, #450a0a); }
+  }
+  .alarm-overlay.show { display: flex; }
+  .alarm-overlay .alarm-icon {
+    font-size: 70px; text-align: center; margin-bottom: 10px;
+    animation: shake 0.4s infinite;
+  }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-8px) rotate(-5deg); }
+    75% { transform: translateX(8px) rotate(5deg); }
+  }
+  .alarm-overlay h2 { font-size: 30px; text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px; }
+  .alarm-overlay .countdown-big {
+    text-align: center; font-size: 84px; font-weight: 900; font-family: var(--mono);
+    text-shadow: 0 0 30px rgba(255,255,255,0.5); line-height: 1;
+  }
+  .alarm-overlay .countdown-label { text-align: center; font-size: 16px; opacity: 0.85; margin-bottom: 8px; }
+  .alarm-overlay .conf-line {
+    text-align: center; font-size: 13px; font-family: var(--mono);
+    background: rgba(0,0,0,0.35); border-radius: 8px; padding: 8px 10px;
+    margin-bottom: 12px; line-height: 1.5;
+  }
+  .alarm-instructions {
+    background: rgba(0,0,0,0.3); border-radius: 10px; padding: 16px;
+    font-size: 16px; line-height: 1.6; margin-bottom: 12px; flex: 1;
+  }
+  .alarm-instructions li { margin-bottom: 8px; list-style: none; padding-left: 24px; position: relative; }
+  .alarm-instructions li::before { content: '▸'; position: absolute; left: 6px; color: #fca5a5; }
+  .alarm-actions { display: flex; gap: 10px; }
+  .alarm-actions button {
+    flex: 1; padding: 16px; border-radius: 8px; font-weight: 700; font-size: 15px;
+    min-height: 54px;
+  }
+  .btn-stop { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); }
+  .nocall-note {
+    margin-top: 10px; text-align: center; font-size: 13px; color: #fecaca;
+    line-height: 1.5; font-family: var(--sans);
+  }
+
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--bg-3); border: 1px solid var(--green-hi); padding: 12px 18px;
+    border-radius: 8px; font-size: 14px; z-index: 3000;
+    display: none; max-width: 90%; box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+  }
+  .toast.show { display: block; animation: slide-up 0.3s; }
+  .toast.error { border-color: var(--danger); color: var(--danger-hi); }
+  .toast.success { border-color: var(--ok); color: #a7f3d0; }
+  @keyframes slide-up { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+  .srew-card {
+    background: linear-gradient(135deg, var(--green-soft), rgba(167,139,250,0.1));
+    border: 1px solid var(--green-hi); padding: 14px; border-radius: var(--radius);
+    margin-bottom: 12px;
+  }
+  .srew-card.critical { border-color: var(--danger); background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(167,139,250,0.08)); }
+  .srew-card h3 { color: var(--accent-hi); }
+  .srew-card.critical h3 { color: var(--danger-hi); }
+  .srew-bar { height: 10px; background: var(--bg-3); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .srew-bar-fill { height: 100%; background: linear-gradient(90deg, var(--ok), var(--warn), var(--danger)); transition: width 0.3s; }
+
+  .sources-grid { display: flex; flex-direction: column; gap: 0; }
+  .sources-tag {
+    display: inline-block; padding: 2px 7px; border-radius: 10px;
+    font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.5px;
+    background: var(--green-soft); color: var(--accent-hi); margin-bottom: 3px;
+  }
+
+  .row { display: flex; gap: 8px; align-items: center; }
+  .space-between { justify-content: space-between; }
+  .small { font-size: 12px; color: var(--fg-2); font-family: var(--mono); }
+  .hidden { display: none !important; }
+
+  @media (max-width: 420px) {
+    .metric .value { font-size: 20px; }
+    .threshold-main .value { font-size: 28px; }
+    .threshold-factors { grid-template-columns: 1fr 1fr; }
+    .alarm-overlay .countdown-big { font-size: 64px; }
+    .alarm-overlay h2 { font-size: 24px; }
+    nav.tabs button { font-size: 12px; padding: 10px 4px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">⚠️</div>
+    <div>
+      <h1>Seismic Sentinel</h1>
+      <div class="ver">CF v1.8.5 · Manifest Fix</div>
+    </div>
+  </div>
+  <div class="status">
+    <div id="netBadge" class="badge offline"><span class="dot"></span><span>OFFLINE</span></div>
+    <button class="icon-btn" id="btnGuide" title="Guida Utente"><i class="fa-solid fa-circle-question"></i></button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button data-tab="dashboard" class="active"><i class="fa-solid fa-gauge-high"></i><span>Pannello</span></button>
+  <button data-tab="gis"><i class="fa-solid fa-map-location-dot"></i><span>Mappa</span></button>
+  <button data-tab="three"><i class="fa-solid fa-cube"></i><span>Vulcano 3D</span></button>
+  <button data-tab="pc"><i class="fa-solid fa-shield-halved"></i><span>Sicurezza</span></button>
+</nav>
+
+<main>
+
+  <section id="view-dashboard" class="view active">
+
+    <div id="proCard" class="pro-card collapsed">
+      <div class="pro-toggle" onclick="toggleProMode()">
+        <h3 style="margin:0;"><i class="fa-solid fa-bolt"></i> Modalità Pro (opzionale) — Cloudflare Worker</h3>
+        <i class="fa-solid fa-chevron-down" id="proChevron" style="transform: rotate(-90deg);"></i>
+      </div>
+      <div class="pro-body" id="proBody">
+        <div class="pro-status unconfigured" id="proStatus">
+          <span class="status-dot"></span>
+          <span id="proStatusText">Non configurato — l'app usa la cascata di proxy pubblici</span>
+        </div>
+        <p style="margin-top:10px;">
+          L'app <strong>funziona già senza configurazione</strong> usando proxy pubblici in cascata automatica.
+          Con un tuo Worker personale ottieni <strong>affidabilità 99.99%</strong>, la
+          <strong>conferma cross-device</strong> (4+ dispositivi entro 10 km) e la lettura
+          <strong>diretta e stabile</strong> della pagina OV per il bradisismo.
+        </p>
+        <ol>
+          <li>Installa <code>wrangler</code>: <code>npm install -g wrangler</code></li>
+          <li>Login Cloudflare: <code>wrangler login</code></li>
+          <li>Crea cartella, salva il codice <code>proxy-ingv.js</code> e <code>wrangler.toml</code> (vedi commento HTML in testa al file)</li>
+          <li>Deploy: <code>wrangler deploy</code></li>
+          <li>Copia l'URL generato (es: <code>https://proxy-ingv.tuonome.workers.dev</code>)</li>
+        </ol>
+        <p>Incolla qui l'URL del tuo Worker:</p>
+        <div class="row" style="margin-top:8px;">
+          <input type="text" id="proxyInput" placeholder="https://proxy-ingv.tuonome.workers.dev"
+            style="flex:1;padding:12px;background:var(--bg-0);border:1px solid var(--border-hi);border-radius:6px;color:var(--fg-0);font-family:var(--mono);font-size:12px;">
+          <button onclick="saveProxyURL()"
+            style="padding:12px 16px;background:var(--green-hi);color:#0d0d0d;border-radius:6px;font-weight:700;font-size:13px;">
+            SALVA
+          </button>
+          <button onclick="clearProxyURL()"
+            style="padding:12px 14px;background:var(--bg-3);color:var(--fg-1);border-radius:6px;font-weight:700;font-size:13px;border:1px solid var(--border);">
+            RESET
+          </button>
+        </div>
+        <div class="small" style="margin-top:8px;">
+          <i class="fa-solid fa-circle-info"></i> Se configurato: priorità assoluta (Livello 0) + endpoint /trigger + /ovstato.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-wave-square"></i> Sensore Terremoto — ascolta il terreno</h3>
+      <p class="small" style="margin-bottom:10px;font-family:var(--sans);font-size:14px;color:var(--fg-1);line-height:1.5;">
+        Il telefono ascolta le vibrazioni del terreno (finestra 3 s, filtro Butterworth 0.8-10 Hz).
+        Se riconosce un terremoto <strong style="color:var(--fg-0);">suona subito</strong>.
+        All'avvio si <strong style="color:var(--fg-0);">calibra da solo</strong> sul rumore di casa tua.
+      </p>
+      <button id="btnToggle" class="activate-btn">
+        <i class="fa-solid fa-power-off"></i>
+        <span>AVVIA PROTEZIONE TERREMOTO</span>
+      </button>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-sliders"></i> Sensibilità sensore (manuale)</h3>
+      <div class="row" style="gap:8px;">
+        <button id="sensAlta" class="sens-btn">ALTA</button>
+        <button id="sensMedia" class="sens-btn active">MEDIA</button>
+        <button id="sensBassa" class="sens-btn">BASSA</button>
+      </div>
+      <div class="small" id="sensInfo" style="margin-top:8px;font-family:var(--sans);font-size:12px;color:var(--fg-2);line-height:1.5;">
+        Stime indicative: <strong style="color:var(--fg-1);">ALTA</strong> ≈ M2.5 a 10 km ·
+        <strong style="color:var(--fg-1);">MEDIA</strong> ≈ M3.0 a 10 km ·
+        <strong style="color:var(--fg-1);">BASSA</strong> ≈ M3.5 a 10 km
+      </div>
+      <div class="small" style="margin-top:6px;font-family:var(--sans);font-size:13px;line-height:1.5;">
+        <strong style="color:var(--fg-0);">ALTA</strong> = suona anche con scosse deboli ·
+        <strong style="color:var(--fg-0);">BASSA</strong> = solo scosse forti (meno falsi allarmi).
+        La calibrazione automatica sul rumore di casa resta sempre attiva.
+      </div>
+    </div>
+
+    <div class="threshold-card">
+      <h3><i class="fa-solid fa-sliders"></i> Sensibilità automatica</h3>
+      <div class="threshold-main">
+        <div class="value" id="thresholdValue">0.80</div>
+        <div class="label">Livello di sensibilità dell'allarme</div>
+      </div>
+      <div class="threshold-factors">
+        <div class="threshold-factor" id="factorGPS">
+          <div class="f-label">Sollevamento suolo</div>
+          <div class="f-value" id="gpsRate">1.0</div>
+          <div class="f-unit">cm al mese</div>
+        </div>
+        <div class="threshold-factor" id="factorBvalue">
+          <div class="f-label">Frequenza terremoti</div>
+          <div class="f-value" id="bValueDisplay">1.00</div>
+          <div class="f-unit">indice INGV</div>
+        </div>
+        <div class="threshold-factor" id="factorAmp">
+          <div class="f-label">Tipo di terreno</div>
+          <div class="f-value" id="ampFactor">1.3</div>
+          <div class="f-unit">quanto amplifica</div>
+        </div>
+      </div>
+      <div class="threshold-formula">
+        Il sistema diventa <strong>più sensibile</strong> da solo quando il suolo si solleva
+        o i terremoti aumentano (dati ufficiali INGV e OV).
+      </div>
+    </div>
+
+    <div class="metric-grid">
+      <div class="metric" id="mEntropy">
+        <div class="label">Regolarità vibrazioni</div>
+        <div class="value">1.00</div>
+        <div class="sub">Bassa = possibile terremoto</div>
+      </div>
+      <div class="metric" id="mLambda">
+        <div class="label">Forza direzione onda</div>
+        <div class="value">0.00</div>
+        <div class="sub">Alta = vibrazione coerente</div>
+      </div>
+      <div class="metric" id="mRiskIdx">
+        <div class="label">Livello di rischio</div>
+        <div class="value">0.00</div>
+        <div class="sub">Alto = allarme in arrivo</div>
+      </div>
+      <div class="metric" id="mBandP">
+        <div class="label">Energia onda P</div>
+        <div class="value">--</div>
+        <div class="sub">Alta = segnale sismico</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <h3><i class="fa-solid fa-building-shield"></i> Sicurezza del tuo edificio</h3>
+      <div class="srew-card" id="srewCard">
+        <div class="row space-between">
+          <div>
+            <div class="small">Zona dove ti trovi</div>
+            <strong id="srewZone" style="font-size:14px;">— in attesa GPS —</strong>
+          </div>
+          <div style="text-align:right;">
+            <div class="small">Rischio risonanza</div>
+            <strong id="srewIndex" style="font-size:24px;font-family:var(--mono);color:var(--fg-0);">0.00</strong>
+          </div>
+        </div>
+        <div class="srew-bar"><div class="srew-bar-fill" id="srewBar" style="width:0%;"></div></div>
+        <div class="row space-between" style="margin-top:8px;">
+          <div class="small">Terreno: <span id="srewAmp">—</span>× amplificazione</div>
+          <div class="small">Suolo: <span id="srewFsoil">—</span> Hz</div>
+          <div class="small">Edificio: <span id="srewFbld">—</span> Hz</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-square-root-variable"></i> Dati tecnici del sensore (per esperti)</h3>
+      <div class="matrix-display" id="covMatrix">
+        <div>0.00</div><div>0.00</div><div>0.00</div>
+        <div>0.00</div><div>0.00</div><div>0.00</div>
+        <div>0.00</div><div>0.00</div><div>0.00</div>
+      </div>
+      <div class="small" style="margin-top:8px;">Matrice di covarianza 3D con pulizia del rumore (σ₃=0)</div>
+      <div class="small" style="margin-top:6px;">
+        PGA 3s: <span id="rmsVal" style="color:var(--fg-0);">--</span> m/s² ·
+        Soglia assi: <span id="pgaMinVal" style="color:var(--warn);">--</span> ·
+        Confidenza ultima: <span id="confVal" style="color:var(--accent-hi);">--</span> ·
+        <span id="calibStatus" style="color:var(--accent-hi);">calibrazione...</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-chart-line"></i> Vibrazioni del terreno (frequenze)</h3>
+      <canvas id="cvsSpec" class="spec"></canvas>
+      <div class="small" style="margin-top:6px;font-family:var(--sans);font-size:13px;">Verde = frequenze dei terremoti · Grigio = rumori normali</div>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-wave-square"></i> Andamento vibrazioni</h3>
+      <canvas id="cvsSeismo" class="seismo"></canvas>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-compass"></i> Direzione da cui arriva l'onda</h3>
+      <div class="compass-wrap">
+        <div class="compass"><div class="needle" id="compassNeedle"></div></div>
+        <div class="compass-info">
+          <strong id="azimuthVal">--°</strong>
+          Direzione stimata<br>
+          <span class="small" style="font-family:var(--sans);">Il telefono capisce da che parte arriva la scossa</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-map-location-dot"></i> Mappa della tua zona</h3>
+      <div id="mapMini" class="mini-map"></div>
+      <div class="small" id="gpsUserStatus" style="margin-top:6px;color:var(--accent-hi);">
+        <i class="fa-solid fa-satellite-dish"></i> Ricerca della tua posizione in corso...
+      </div>
+      <div class="small" style="margin-top:6px;font-family:var(--sans);font-size:13px;">
+        🔴 Zona di massimo pericolo · 🟡 Vulcano attivo · 📍 Casa tua (cerchio viola = precisione GPS) · 🎯 Dove aspettare i soccorsi
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-satellite-dish"></i> Terremoti — specchio della lista ufficiale INGV</h3>
+      <div class="mirror-banner">
+        <i class="fa-solid fa-check-double"></i>
+        <div>
+          <strong>Stessi terremoti della lista ufficiale INGV</strong> (magnitudo 2.0 o più, ultimi 7 giorni, zona Campi Flegrei).
+          Orari in <strong>ora italiana</strong>, come sul sito ufficiale.
+          Le micro-scosse sotto 2.0 sono reali ma non compaiono nella lista ufficiale: le teniamo separate.
+          <div class="row" style="gap:10px;margin-top:8px;flex-wrap:wrap;">
+            <a href="https://terremoti.ingv.it/" target="_blank" rel="noopener" class="mirror-link">Confronta lista ufficiale ↗</a>
+            <a href="https://terremoti.ov.ingv.it/gossip/flegrei/" target="_blank" rel="noopener" class="mirror-link">Micro-scosse ufficiali (GOSSIP) ↗</a>
+          </div>
+        </div>
+      </div>
+      <div id="ingvStatus" class="ingv-status loading">
+        <span class="gateway-dot"></span>
+        <span id="ingvStatusText">Collegamento ai dati ufficiali...</span>
+      </div>
+      <div class="row space-between" style="margin-bottom:8px;">
+        <div class="small">Aggiornato: <span id="ingvTime">--:--</span></div>
+        <div class="small"><span id="ingvCount">0</span> eventi totali</div>
+      </div>
+      <div id="mirrorCounts" class="small" style="margin-bottom:8px;color:var(--fg-1);"></div>
+      <div id="ingvList" class="event-list">
+        <div class="small" style="text-align:center;padding:20px;">Connessione ai dati INGV in corso...</div>
+      </div>
+      <div class="small" style="margin-top:8px;font-family:var(--sans);font-size:13px;line-height:1.5;">
+        👆 Tocca un terremoto per vederlo sulla <strong style="color:var(--fg-0);">Mappa</strong> o nel <strong style="color:var(--fg-0);">3D</strong>.
+        Tocca ↗ per aprire la sua scheda ufficiale INGV e verificare che i dati sono reali.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-satellite"></i> Sollevamento del suolo (bradisismo)<span class="official-tag" id="bradyTag">INGV UFFICIALE</span></h3>
+      <div id="gpsStatus" class="gps-status loading">
+        <span class="gps-dot"></span>
+        <span id="gpsStatusText">Lettura automatica bollettino INGV OV (via proxy CORS)...</span>
+      </div>
+      <div class="row space-between">
+        <div>
+          <div class="small">Sollevamento attuale (zona di massima deformazione)</div>
+          <strong id="gpsRateValue" style="color:var(--warn);font-family:var(--mono);">-- mm/mese</strong>
+        </div>
+        <div style="text-align:right;">
+          <div class="small">Valore in cm/mese</div>
+          <strong id="gpsCmMonth" style="font-family:var(--mono);color:var(--accent-hi);">-- cm/mese</strong>
+        </div>
+      </div>
+      <div class="small" style="margin-top:8px;font-family:var(--sans);font-size:12px;line-height:1.5;">
+        Lettura automatica ogni ora dall'ultimo bollettino della pagina ufficiale
+        <a href="https://www.ov.ingv.it/index.php/flegrei-stato-attuale" target="_blank" rel="noopener">INGV OV — Stato attuale Campi Flegrei ↗</a>
+        (via proxy CORS, nessun errore in console). Se la lettura non è possibile, resta l'ultimo valore ufficiale noto.
+        <div class="row" style="gap:10px;margin-top:8px;flex-wrap:wrap;">
+          <a class="mirror-link" href="https://www.ov.ingv.it/index.php/flegrei-stato-attuale" target="_blank" rel="noopener">Stato attuale CF ↗</a>
+          <a class="mirror-link" href="https://www.ov.ingv.it/index.php/monitoraggio-e-infrastrutture/bollettini-tutti/boll-sett-flegrei/anno-2026" target="_blank" rel="noopener">Bollettini 2026 ↗</a>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <section id="view-gis" class="view map-view">
+    <div id="mapFull"></div>
+    <div class="legend-float">
+      <h4><i class="fa-solid fa-layer-group"></i> LEGENDA MAPPA</h4>
+      <div class="li"><div class="sw" style="background:rgba(239,68,68,0.35);border:2px solid #dc2626;"></div>Zona di massimo pericolo</div>
+      <div class="li"><div class="sw" style="background:rgba(245,158,11,0.25);border:2px solid #f59e0b;"></div>Zona di attenzione</div>
+      <div class="li"><div class="sw" style="background:#f97316;"></div>Vulcano attivo (Solfatara)</div>
+      <div class="li"><div class="sw" style="background:#10b981;border-radius:50%;"></div>Dove aspettare i soccorsi</div>
+      <div class="li"><div class="sw" style="background:#06b6d4;border-radius:50%;"></div>Punto di incontro</div>
+      <div class="li"><div class="sw" style="background:#a78bfa;border-radius:50%;"></div>Casa tua (sei qui)</div>
+      <div class="li"><div class="sw" style="background:rgba(167,139,250,0.25);border:1px dashed #a78bfa;"></div>Precisione del GPS</div>
+      <div class="li"><div class="sw" style="background:#ef4444;border-radius:50%;"></div>Terremoti recenti</div>
+      <div class="li"><div class="sw" style="background:#f59e0b;border-radius:50%;border:2px solid #fff;"></div>Terremoto selezionato</div>
+    </div>
+  </section>
+
+  <section id="view-three" class="view map-view">
+    <div id="threeContainer">
+      <div id="threeLoading" class="three-loading">
+        <div><i class="fa-solid fa-spinner fa-spin"></i> Caricamento motore 3D...</div>
+      </div>
+      <div class="three-hud">
+        <div class="hud-box"><i class="fa-solid fa-gauge"></i> FPS: <span id="fpsCounter">--</span></div>
+        <div class="hud-box">Q: <span id="qTier">-</span> · <span id="drsLevel">1.00</span>x</div>
+        <div class="hud-box" id="seismic24h">📊 24h: --</div>
+        <div class="hud-box" id="waveLive" style="display:none;">🔴 ONDE LIVE</div>
+        <div class="hud-box" id="focusInfo" style="display:none;">🎯 --</div>
+        <div class="hud-box"><i class="fa-solid fa-mountain"></i> <span id="eventCount3D">0</span> terremoti</div>
+      </div>
+      <div class="three-legend" id="threeLegend">
+        <button class="three-legend-toggle" id="threeLegendToggle" title="Mostra/nascondi legenda">
+          <span>🌋 Legenda vulcano</span>
+          <i class="fa-solid fa-chevron-down" id="threeLegendChevron"></i>
+        </button>
+        <div class="three-legend-body" id="threeLegendBody">
+          <div style="line-height:1.7;font-size:13px;margin-top:6px;">
+            🔴 Puntini = terremoti reali INGV (più grandi = più forti) — <em>dati tempo reale</em><br>
+            🟠 Sfera = sorgente di pressione/magma a ~3.5 km sotto <strong>Pozzuoli</strong> — SCHEMA da letteratura INGV; <strong>luminosità = attività sismica attuale</strong><br>
+            🟡 Strato 0–0.5 km: ceneri e pomici<br>
+            🔴 Strato 0.5–2 km: idrotermale<br>
+            🟣 Strato ≥3 km: sill magmatico<br>
+            🔵 Anello azzurro = onda P · 🔴 Anello rosso = onda S (velocità reali)<br>
+            🟠 Anello lampeggiante = terremoto selezionato<br>
+            📏 Righello a destra: 1 tacca = 1 km di profondità<br>
+            <span class="small" style="display:block;margin-top:4px;font-family:var(--sans);">
+              Scala unica: 1 unità = 2 km su tutti gli assi · Qualità 3D adattiva al tuo hardware<br>
+              Trascina col dito per girare · Pizzica per avvicinarti
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-pc" class="view">
+
+    <div class="card">
+      <h3><i class="fa-solid fa-triangle-exclamation"></i> Piano di Evacuazione</h3>
+      <p style="font-size:14px;color:var(--fg-1);line-height:1.6;">
+        I Campi Flegrei sono un'area vulcanica attiva. In caso di <strong>allarme ufficiale
+        della Protezione Civile</strong>, segui questi passi con calma. Questo strumento è un
+        aiuto personale: <strong>non sostituisce le allerte ufficiali</strong>.
+      </p>
+      <p style="font-size:13px;color:var(--warn);line-height:1.6;margin-top:8px;">
+        📵 <strong>Durante un terremoto NON chiamare il 112</strong> salvo pericolo immediato:
+        le linee devono restare libere per le emergenze reali. Mettiti al riparo.
+      </p>
+    </div>
+
+    <div class="step-list">
+      <div class="step">
+        <h4>DOVE ASPETTARE</h4>
+        <p>Vai a piedi nel punto di attesa più vicino (lo vedi nella scheda Mappa). Non usare l'auto se puoi: le strade saranno piene.</p>
+      </div>
+      <div class="step">
+        <h4>TRASFERIMENTO</h4>
+        <p>Dal punto di attesa, i mezzi della Protezione Civile ti porteranno alle Aree di Incontro fuori dalla zona di pericolo.</p>
+      </div>
+      <div class="step">
+        <h4>DOVE SARAI OSPITATO</h4>
+        <p>
+          <strong>Pozzuoli → Lombardia</strong><br>
+          <strong>Bacoli → Umbria/Marche</strong><br>
+          <strong>Monte di Procida → Abruzzo/Molise</strong><br>
+          <strong>Bagnoli → Basilicata</strong>
+        </p>
+      </div>
+      <div class="step">
+        <h4>VALIGIA DI EMERGENZA</h4>
+        <p>Tieni pronti: documento d'identità, medicinali personali, acqua, torcia, scarpe comode, powerbank. Tieni il telefono carico.</p>
+      </div>
+      <div class="step">
+        <h4>DURANTE LA SCOSSA</h4>
+        <p>Se sei in casa: <strong>NON fuggire sulle scale</strong>. Riparati sotto un tavolo robusto o una trave portante. Proteggi testa e collo. Se sei all'aperto: allontanati da edifici e linee elettriche.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-phone-volume"></i> Numeri di Emergenza (chiamata manuale)</h3>
+      <a class="emergency-num" href="tel:112">
+        <div class="num-icon"><i class="fa-solid fa-phone"></i></div>
+        <div class="num-info">
+          <strong>Emergenze (Polizia, Ambulanza, Vigili)</strong>
+          <span>112</span>
+        </div>
+      </a>
+      <a class="emergency-num" href="tel:800840840">
+        <div class="num-icon"><i class="fa-solid fa-shield-halved"></i></div>
+        <div class="num-info">
+          <strong>Protezione Civile Nazionale</strong>
+          <span>800 840 840</span>
+        </div>
+      </a>
+      <a class="emergency-num" href="tel:800232525">
+        <div class="num-icon"><i class="fa-solid fa-flag"></i></div>
+        <div class="num-info">
+          <strong>Sala Operativa Campania</strong>
+          <span>800 232 525</span>
+        </div>
+      </a>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-book-open-reader"></i> Fonti Ufficiali e Riferimenti</h3>
+      <p style="font-size:13px;color:var(--fg-2);line-height:1.5;margin-bottom:10px;">
+        Tutti i dati di questa app provengono da fonti pubbliche verificabili. Tocca qualsiasi link per verificare la coerenza dei dati direttamente alla fonte.
+      </p>
+      <div class="sources-grid">
+
+        <a class="source-link" href="https://terremoti.ingv.it/" target="_blank" rel="noopener noreferrer">
+          <div class="src-icon"><i class="fa-solid fa-satellite-dish"></i></div>
+          <div class="src-body">
+            <span class="sources-tag">Dati Sismici</span>
+            <strong>INGV — Centro Nazionale Terremoti</strong>
+            <div class="src-desc">Bollettini sismici italiani in tempo reale, catalogo ISIDE.</div>
+            <span class="src-url">terremoti.ingv.it</span>
+          </div>
+          <i class="fa-solid fa-arrow-up-right-from-square src-arrow"></i>
+        </a>
+
+        <a class="source-link" href="https://webservices.ingv.it/fdsnws/event/1/query" target="_blank" rel="noopener noreferrer">
+          <div class="src-icon"><i class="fa-solid fa-code"></i></div>
+          <div class="src-body">
+            <span class="sources-tag">API Live</span>
+            <strong>INGV FDSNWS REST API</strong>
+            <div class="src-desc">Endpoint da cui l'app scarica gli eventi degli ultimi 7 giorni bbox Campi Flegrei.</div>
+            <span class="src-url">webservices.ingv.it/fdsnws/event/1/query</span>
+          </div>
+          <i class="fa-solid fa-arrow-up-right-from-square src-arrow"></i>
+        </a>
+
+        <a class="source-link" href="https://www.ov.ingv.it/monitoraggio-e-infrastrutture/rete-gnss/" target="_blank" rel="noopener noreferrer">
+          <div class="src-icon"><i class="fa-solid fa-satellite"></i></div>
+          <div class="src-body">
+            <span class="sources-tag">GNSS</span>
+            <strong>INGV OV — Rete GNSS Campi Flegrei (Rione Terra)</strong>
+            <div class="src-desc">Stazioni GPS permanenti per monitoraggio bradismetrico e deformazione crostale.</div>
+            <span class="src-url">ov.ingv.it/monitoraggio-e-infrastrutture/rete-gnss</span>
+          </div>
+          <i class="fa-solid fa-arrow-up-right-from-square src-arrow"></i>
+        </a>
+
+        <a class="source-link" href="https://www.protezionecivile.gov.it/it/risk/vulcanic-risk/phlegraean-fields" target="_blank" rel="noopener noreferrer">
+          <div class="src-icon"><i class="fa-solid fa-shield-halved"></i></div>
+          <div class="src-body">
+            <span class="sources-tag">Allerta Ufficiale</span>
+            <strong>Protezione Civile — Rischio Vulcanico Campi Flegrei</strong>
+            <div class="src-desc">Livelli di allerta ufficiali, piani di evacuazione, gemellaggi regionali.</div>
+            <span class="src-url">protezionecivile.gov.it/.../phlegraean-fields</span>
+          </div>
+          <i class="fa-solid fa-arrow-up-right-from-square src-arrow"></i>
+        </a>
+
+        <a class="source-link" href="https://www.ov.ingv.it/" target="_blank" rel="noopener noreferrer">
+          <div class="src-icon"><i class="fa-solid fa-mountain-sun"></i></div>
+          <div class="src-body">
+            <span class="sources-tag">Bradisismo</span>
+            <strong>INGV — Osservatorio Vesuviano</strong>
+            <div class="src-desc">Monitoraggio bradismetrico (Rete CGPS Rione Terra), bollettini settimanali.</div>
+            <span class="src-url">ov.ingv.it</span>
+          </div>
+          <i class="fa-solid fa-arrow-up-right-from-square src-arrow"></i>
+        </a>
+
+        <a class="source-link" href="https://www.protezionecivile.gov.it/it/studi-e-ricerche/microzonazione-sismica" target="_blank" rel="noopener noreferrer">
+          <div class="src-icon"><i class="fa-solid fa-layer-group"></i></div>
+          <div class="src-body">
+            <span class="sources-tag">SS-SREW</span>
+            <strong>Microzonazione Sismica Livello 3 (INGV / Regione Campania)</strong>
+            <div class="src-desc">Mappe di amplificazione locale del suolo e frequenze fondamentali del terreno.</div>
+            <span class="src-url">protezionecivile.gov.it/.../microzonazione-sismica</span>
+          </div>
+          <i class="fa-solid fa-arrow-up-right-from-square src-arrow"></i>
+        </a>
+
+        <a class="source-link" href="https://www.openstreetmap.org/" target="_blank" rel="noopener noreferrer">
+          <div class="src-icon"><i class="fa-solid fa-map"></i></div>
+          <div class="src-body">
+            <span class="sources-tag">Mappe Base</span>
+            <strong>OpenStreetMap + CARTO Dark Basemap</strong>
+            <div class="src-desc">Tile geografiche e rendering mappa. Dati © contributori OSM, ODbL license.</div>
+            <span class="src-url">openstreetmap.org · cartocdn.com</span>
+          </div>
+          <i class="fa-solid fa-arrow-up-right-from-square src-arrow"></i>
+        </a>
+
+        <a class="source-link" href="https://github.com/openwound/seismic-sentinel-cf" target="_blank" rel="noopener noreferrer">
+          <div class="src-icon"><i class="fa-brands fa-github"></i></div>
+          <div class="src-body">
+            <span class="sources-tag">Codice Sorgente</span>
+            <strong>Seismic Sentinel CF — MIT License 2026</strong>
+            <div class="src-desc">Repository open-source del progetto, licenza, changelog e roadmap tecnica.</div>
+            <span class="src-url">github.com/openwound/seismic-sentinel-cf</span>
+          </div>
+          <i class="fa-solid fa-arrow-up-right-from-square src-arrow"></i>
+        </a>
+
+        <a class="source-link" href="https://eur-lex.europa.eu/legal-content/IT/TXT/?uri=CELEX:32004L0054" target="_blank" rel="noopener noreferrer">
+          <div class="src-icon"><i class="fa-solid fa-gavel"></i></div>
+          <div class="src-body">
+            <span class="sources-tag">Normativa</span>
+            <strong>Eurocodice 8 / NTC 2018 — Progettazione sismica strutture</strong>
+            <div class="src-desc">Standard internazionali su cui si basa il calcolo SS-SREW della risonanza strutturale.</div>
+            <span class="src-url">eur-lex.europa.eu · NTC2018 MIT</span>
+          </div>
+          <i class="fa-solid fa-arrow-up-right-from-square src-arrow"></i>
+        </a>
+
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><i class="fa-solid fa-circle-info"></i> Disclaimer</h3>
+      <p style="font-size:13px;color:var(--fg-2);line-height:1.6;">
+        Questa PWA è uno strumento di ausilio personale basato su dati pubblici INGV e
+        calcoli edge-computed. Non è un sistema certificato di allerta sismica. In caso
+        di emergenza reale, segui <strong>sempre</strong> le indicazioni ufficiali della
+        Protezione Civile. Licenza MIT 2026.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<div id="modalGuide" class="modal-overlay">
+  <div class="modal">
+    <button class="close-x" onclick="closeGuide()"><i class="fa-solid fa-xmark"></i></button>
+    <h2><i class="fa-solid fa-circle-info"></i> Guida Rapida</h2>
+    <div class="modal-body">
+      <p><strong>1. Avvia la protezione:</strong> premi il pulsante grande "AVVIA PROTEZIONE TERREMOTO". Il telefono userà il sensore interno per ascoltare le vibrazioni del terreno.</p>
+      <p><strong>2. Calibrazione automatica:</strong> per i primi secondi tieni il telefono fermo: l'app impara il rumore di casa tua e regola da sola la sensibilità.</p>
+      <p><strong>3. Sensibilità manuale:</strong> scegli ALTA, MEDIA o BASSA nel Pannello. Sotto i pulsanti trovi le stime indicative di cosa riesce a sentire.</p>
+      <p><strong>4. Solo dati veri:</strong> terremoti e sollevamento del suolo sono letti automaticamente dalle pagine ufficiali INGV. Tocca ↗ per verificare ogni dato.</p>
+      <p><strong>5. La tua posizione:</strong> l'app usa il GPS del telefono (o la rete se il GPS non è disponibile) per mostrarti sulla mappa.</p>
+      <p><strong>6. Vedi dove è successo:</strong> tocca un terremoto nell'elenco e scegli 🗺️ Mappa o 🧊 3D.</p>
+      <p><strong>7. Tieni il telefono fermo:</strong> appoggialo su un tavolo o sul comodino. Di notte lascialo in carica.</p>
+      <p><strong>8. In caso di allarme:</strong> mettiti al riparo e NON chiamare il 112 salvo pericolo immediato: le linee devono restare libere.</p>
+      <p style="color:var(--danger-hi);"><strong>⚠️ Importante:</strong> questo strumento è un aiuto personale. Non sostituisce le allerte ufficiali della <a href="https://www.protezionecivile.gov.it/" target="_blank">Protezione Civile</a>.</p>
+    </div>
+    <button class="btn-primary" onclick="closeGuide()">HO CAPITO, INIZIA IL MONITORAGGIO</button>
+  </div>
+</div>
+
+<div id="alarmOverlay" class="alarm-overlay">
+  <div class="alarm-icon">⚠️</div>
+  <h2 id="alarmTitle">ALLERTA SISMICA</h2>
+  <div class="countdown-big" id="countdownNum">--</div>
+  <div class="countdown-label" id="countdownLabel">La scossa forte arriva tra</div>
+  <div class="conf-line" id="confLine"></div>
+  <div class="alarm-instructions" id="alarmInstructions">
+    <ul>
+      <li>Calcolo distanza in corso...</li>
+    </ul>
+  </div>
+  <div class="alarm-actions">
+    <button class="btn-stop" onclick="stopAlarm()">SILENZIA</button>
+  </div>
+  <div class="nocall-note">
+    📵 Non chiamare il 112 ora: le linee devono restare libere.<br>
+    Mettiti al riparo. Chiama solo in caso di pericolo immediato.
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+
+<script>
+/* ============================================================
+   CONFIG CENTRALE v1.8.5
+   ============================================================ */
+const CONFIG = {
+  PROXY_BASE: null,
+
+  THETA_BASE: 0.80,
+  LAMBDA1_THRESHOLD: 1.2,
+  RISK_INDEX_THRESHOLD: 0.82,
+  ALARM_COOLDOWN: 15000,
+
+  ALPHA_GNSS: 0.05,
+  BETA_INGV: 0.20,
+  BAND_P_THRESHOLD: 0.60,
+
+  BUFFER_SIZE: 64,
+  SAMPLE_RATE: 50,
+  ANALYSIS_STRIDE: 16,
+  BAND_P_LOW: 5,
+  BAND_P_HIGH: 15,
+  BAND_NOISE_HIGH: 3,
+
+  PGA_OVERRIDE: 3.5,
+
+  MIRROR_MIN_MAG: 2.0,
+  STRONG_QUAKE_MAG: 3.0,
+
+  BRADISISMO_FALLBACK: {
+    rate_cm_mese: 1.0,
+    err_cm_mese: 0.3,
+    da: '2026-02',
+    fonte: 'INGV OV — bollettini settimanali Campi Flegrei 2026'
+  },
+  OV_STATO_URL: 'https://www.ov.ingv.it/index.php/flegrei-stato-attuale',
+  BRADY_REFRESH: 3600000,
+
+  UNITS_PER_KM: 0.5,
+  KM_PER_DEG_LON: 84.3,
+  KM_PER_DEG_LAT: 111.32,
+  VP_KMS: 6.0,
+  VS_KMS: 3.5,
+
+  DEPTH_SOURCE: 3.5,
+  DEPTH_SILL: 3.0,
+
+  CRUST_LAYERS: [
+    { depth: 500,  vp: 1.8, vs: 1.0 },
+    { depth: 1500, vp: 2.8, vs: 1.6 },
+    { depth: 9999, vp: 4.2, vs: 2.4 }
+  ],
+
+  SOLFATARA: { lat: 40.8272, lon: 14.1372, name: "Solfatara" },
+  RIONE_TERRA: { lat: 40.8257, lon: 14.1195, name: "Rione Terra" },
+  BBOX: { minLat: 40.70, maxLat: 40.95, minLon: 14.00, maxLon: 14.30 },
+
+  INGV_REFRESH: 30000,
+  INGV_TIMEOUT_PER_GATEWAY: 5000,
+  INGV_MAX_RETRY: 1,
+
+  GEO_TIMEOUT_HI: 15000,
+  GEO_TIMEOUT_LO: 30000,
+  GEO_RETRY: 15000,
+
+  AUDIO_GAIN: 0.0001,
+
+  BAYES_W_ENTROPY: 0.45,
+  BAYES_W_BVALUE: 0.30,
+  BAYES_W_BAND: 0.25,
+
+  SREW_CRITICAL: 1.5,
+  DEFAULT_FLOORS: 4,
+
+  CROWD_MIN_DEVICES: 4,
+  CROWD_RADIUS_KM: 10,
+  TRIGGER_TIMEOUT: 3000
+};
+
+const SENS_LEVELS = {
+  alta:  { K: 2.5, thrConf: 45 },
+  media: { K: 3.0, thrConf: 55 },
+  bassa: { K: 4.5, thrConf: 70 }
+};
+
+const lonToX = (lon) => (lon - 14.137) * CONFIG.KM_PER_DEG_LON * CONFIG.UNITS_PER_KM;
+const latToZ = (lat) => -(lat - 40.827) * CONFIG.KM_PER_DEG_LAT * CONFIG.UNITS_PER_KM;
+const depthToY = (d) => -d * CONFIG.UNITS_PER_KM;
+
+function parseINGVTime(str) {
+  if (!str) return new Date();
+  let s = String(str);
+  if (!/Z$/i.test(s) && !/[+-]\d{2}:?\d{2}$/.test(s)) s += 'Z';
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? new Date() : d;
+}
+function itDate(d) {
+  return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Rome' });
+}
+function itTime(d, withSec) {
+  const o = { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' };
+  if (withSec) o.second = '2-digit';
+  return d.toLocaleTimeString('it-IT', o);
+}
+function itFull(d) { return itDate(d) + ' ' + itTime(d, true); }
+
+function computeSeismicActivity24h(events) {
+  const cutoff = Date.now() - 24 * 3600000;
+  let n = 0;
+  for (const ev of events) {
+    if (ev.mag >= 2.0 && parseINGVTime(ev.time).getTime() >= cutoff) n++;
+  }
+  return n;
+}
+
+const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+
+const EnvDetector = {
+  isWebView() {
+    if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return true;
+    if (window.cordova || window.PhoneGap) return true;
+    if (window.webkit && window.webkit.messageHandlers) return true;
+    const ua = navigator.userAgent || '';
+    if (/wv|WebView|Version\/[\d.]+.*Chrome\/[\d.]+ Mobile/i.test(ua) && !/Chrome\/[\d.]+ Mobile Safari/i.test(ua)) return true;
+    if (window.location.protocol === 'capacitor:' || window.location.protocol === 'ionic:' || window.location.protocol === 'file:') return true;
+    return false;
+  },
+  isPWA() {
+    return window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+  },
+  getEnvironment() {
+    if (this.isWebView()) return 'webview';
+    if (this.isPWA()) return 'pwa';
+    return 'browser';
+  }
+};
+
+const ProxyConfig = {
+  KEY: 'seismic-sentinel-proxy-url',
+  get() {
+    if (CONFIG.PROXY_BASE) return CONFIG.PROXY_BASE;
+    try {
+      const stored = localStorage.getItem(this.KEY);
+      if (stored && stored.startsWith('http')) return stored;
+    } catch (e) { }
+    return null;
+  },
+  set(url) {
+    try {
+      localStorage.setItem(this.KEY, url);
+      return true;
+    } catch (e) { return false; }
+  },
+  clear() {
+    try {
+      localStorage.removeItem(this.KEY);
+      return true;
+    } catch (e) { return false; }
+  },
+  isConfigured() { return !!this.get(); }
+};
+
+function getDeviceId() {
+  try {
+    let id = localStorage.getItem('sentinel-dev');
+    if (!id) {
+      id = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
+      localStorage.setItem('sentinel-dev', id);
+    }
+    return id;
+  } catch (e) { return 'dev-fallback'; }
+}
+
+const MICROZONAZIONE_FLEGREA = [
+  { zona: "Pozzuoli_Solfatara",  f_suolo: 3.2, A_suolo: 2.1, center: [40.827, 14.137], radius: 1.2 },
+  { zona: "Bagnoli_Piana",       f_suolo: 1.8, A_suolo: 2.4, center: [40.808, 14.175], radius: 1.5 },
+  { zona: "Rione_Terra_Tufo",    f_suolo: 5.5, A_suolo: 1.1, center: [40.826, 14.120], radius: 0.8 },
+  { zona: "Agnano_Cratere",      f_suolo: 2.4, A_suolo: 1.9, center: [40.830, 14.160], radius: 1.0 },
+  { zona: "Bacoli_Costa",        f_suolo: 2.0, A_suolo: 2.2, center: [40.795, 14.080], radius: 1.3 },
+  { zona: "MonteProcida_Punta",  f_suolo: 3.8, A_suolo: 1.5, center: [40.765, 14.045], radius: 0.9 },
+  { zona: "Default_Tufo",        f_suolo: 4.0, A_suolo: 1.3, center: null, radius: 999 }
+];
+
+const SAFE_AREAS = [
+  { name: "Stadio Antonetti", type: "attesa", lat: 40.8331, lon: 14.1214 },
+  { name: "Piazza della Repubblica", type: "attesa", lat: 40.8287, lon: 14.1241 },
+  { name: "Parcheggio Via Campi Flegrei", type: "attesa", lat: 40.8195, lon: 14.1643 },
+  { name: "Piazzale Accademia Aeronautica", type: "attesa", lat: 40.8370, lon: 14.1318 },
+  { name: "Parco Urbano Via Pisciarelli", type: "attesa", lat: 40.8215, lon: 14.1477 },
+  { name: "Area Porto di Baia", type: "attesa", lat: 40.8064, lon: 14.0783 },
+  { name: "Piazza San Marco (Bacoli)", type: "attesa", lat: 40.7962, lon: 14.0775 },
+  { name: "Lungomare Monte di Procida", type: "attesa", lat: 40.7760, lon: 14.0500 },
+  { name: "Area Incontro Stadio", type: "incontro", lat: 40.8390, lon: 14.1150 },
+  { name: "Area Incontro Bagnoli", type: "incontro", lat: 40.8100, lon: 14.1750 },
+  { name: "Area Incontro Bacoli", type: "incontro", lat: 40.7880, lon: 14.0700 }
+];
+
+const STATE = {
+  engineActive: false,
+  online: navigator.onLine,
+  userPos: null,
+  userFirstFix: false,
+  lastAlarmAt: 0,
+  suppressUntil: 0,
+  ingvEvents: [],
+  lastINGVUpdate: null,
+  lastGatewayUsed: null,
+  ingvConsecutiveFailures: 0,
+  environment: EnvDetector.getEnvironment(),
+  gpsData: { rate: CONFIG.BRADISISMO_FALLBACK.rate_cm_mese, err: CONFIG.BRADISISMO_FALLBACK.err_cm_mese, status: 'loading', source: 'pending', updated: null },
+  dynamicThreshold: CONFIG.THETA_BASE,
+  bValueCurrent: 1.0,
+  seismic24h: 0,
+  sensitivity: 'media',
+  coherenceFlag: false,
+  lastConfidence: null,
+  worker: null,
+  wakeLock: null,
+  audioCtx: null,
+  oscillator: null,
+  maps: { mini: null, full: null },
+  three: null,
+  threeLoading: false,
+  currentGeoZone: MICROZONAZIONE_FLEGREA[MICROZONAZIONE_FLEGREA.length - 1],
+  srewData: { I_ris: 0, critical: false, f_P: 0 },
+  calibDone: false
+};
+
+const $ = (id) => document.getElementById(id);
+const showToast = (msg, type = '') => {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(t._to);
+  t._to = setTimeout(() => t.classList.remove('show'), 4000);
+};
+
+const TAB_ID = Math.random().toString(36).slice(2);
+let bc = null;
+try {
+  bc = new BroadcastChannel('sentinel-alarm');
+  bc.onmessage = (e) => {
+    if (e.data && e.data.type === 'alarm' && Math.abs(Date.now() - e.data.t) < 2500) {
+      STATE.suppressUntil = e.data.t + 2500;
+    }
+  };
+} catch (e) { }
+
+/* ============================================================
+   [M1] MANIFEST GENERATO A RUNTIME (Blob URL, JSON pulito)
+   Nessuna codifica manuale: JSON.stringify + encodeURIComponent
+   solo per l'icona SVG. Zero Syntax error.
+   ============================================================ */
+function setupManifest() {
+  try {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" fill="#0d0d0d"/><text x="96" y="120" font-size="96" text-anchor="middle">⚠️</text></svg>';
+    const manifest = {
+      name: 'Seismic Sentinel CF',
+      short_name: 'SentinelCF',
+      start_url: '.',
+      display: 'standalone',
+      background_color: '#0d0d0d',
+      theme_color: '#a78bfa',
+      icons: [{ src: 'data:image/svg+xml,' + encodeURIComponent(svg), sizes: '192x192', type: 'image/svg+xml' }]
+    };
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' }));
+    document.head.appendChild(link);
+  } catch (e) { /* manifest opzionale: l'app funziona comunque */ }
+}
+
+function formatINGVDate(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
+}
+
+function toggleProMode() {
+  const card = $('proCard');
+  card.classList.toggle('collapsed');
+  const chevron = $('proChevron');
+  chevron.style.transform = card.classList.contains('collapsed') ? 'rotate(-90deg)' : '';
+}
+
+function saveProxyURL() {
+  const input = $('proxyInput');
+  let url = input.value.trim();
+
+  if (!url.startsWith('https://')) {
+    showToast('URL deve iniziare con https://', 'error');
+    return;
+  }
+
+  url = url.replace(/\/+$/, '');
+
+  let parsed;
+  try { parsed = new URL(url); } catch (e) { parsed = null; }
+  if (!parsed || !parsed.hostname.endsWith('.workers.dev')) {
+    showToast('URL non valido: deve essere https://nome.workers.dev', 'error');
+    return;
+  }
+
+  if (ProxyConfig.set(url)) {
+    showToast('✓ CF Worker salvato! Test connessione...', 'success');
+    updateProStatus();
+    setTimeout(() => { fetchINGVData(); fetchBradysism(); }, 500);
+  } else {
+    showToast('Impossibile salvare', 'error');
+  }
+}
+
+function clearProxyURL() {
+  ProxyConfig.clear();
+  $('proxyInput').value = '';
+  showToast('✓ CF Worker rimosso. Torna alla cascata automatica.', 'success');
+  updateProStatus();
+}
+
+function updateProStatus() {
+  const status = $('proStatus');
+  const statusText = $('proStatusText');
+  const proxyURL = ProxyConfig.get();
+
+  if (proxyURL) {
+    status.className = 'pro-status configured';
+    statusText.textContent = '✓ CF Worker attivo: ' + proxyURL.replace(/^https?:\/\//, '') + ' (proxy + trigger + ovstato)';
+  } else {
+    status.className = 'pro-status unconfigured';
+    statusText.textContent = 'Non configurato — cascata automatica di proxy pubblici (ambiente: ' + STATE.environment + ')';
+  }
+
+  if (proxyURL && $('proxyInput')) {
+    $('proxyInput').value = proxyURL;
+  }
+}
+
+function setSensitivity(level) {
+  STATE.sensitivity = level;
+  try { localStorage.setItem('sentinel-sens', level); } catch (e) { }
+  ['alta', 'media', 'bassa'].forEach(l => {
+    const el = $('sens' + l.charAt(0).toUpperCase() + l.slice(1));
+    if (el) el.classList.toggle('active', l === level);
+  });
+  if (STATE.worker) STATE.worker.postMessage({ type: 'config', K: SENS_LEVELS[level].K });
+  showToast('Sensibilità impostata: ' + level.toUpperCase(), 'success');
+}
+
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const toRad = (x) => x * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function getGeoZone(lat, lon) {
+  for (const z of MICROZONAZIONE_FLEGREA) {
+    if (!z.center) continue;
+    const d = haversineDistance(lat, lon, z.center[0], z.center[1]);
+    if (d <= z.radius) return z;
+  }
+  return MICROZONAZIONE_FLEGREA[MICROZONAZIONE_FLEGREA.length - 1];
+}
+
+function calculateStructuralRisk(peakFreqP, buildingFloors = CONFIG.DEFAULT_FLOORS) {
+  const f_edificio = 10 / Math.max(1, buildingFloors);
+  const zona = STATE.currentGeoZone;
+  const deltaF = Math.abs(peakFreqP - f_edificio);
+  const sigma = 1.0;
+  const resonanceFactor = Math.exp(-Math.pow(deltaF, 2) / (2 * sigma * sigma));
+  const riskIndex = resonanceFactor * zona.A_suolo;
+  return {
+    isResonanceCritical: riskIndex >= CONFIG.SREW_CRITICAL,
+    riskScore: riskIndex,
+    f_edificio,
+    f_suolo: zona.f_suolo,
+    A_suolo: zona.A_suolo,
+    zona: zona.zona
+  };
+}
+
+function stratifiedRayTracing(distanceKm, hypocentralDepthKm = 2.0) {
+  const layers = CONFIG.CRUST_LAYERS;
+  let tP = 0, tS = 0;
+  let remainingDepth = hypocentralDepthKm * 1000;
+  let prevDepth = 0;
+
+  for (const layer of layers) {
+    if (remainingDepth <= 0) break;
+    const layerThickness = Math.min(layer.depth - prevDepth, remainingDepth);
+    const verticalKm = layerThickness / 1000;
+    tP += verticalKm / layer.vp;
+    tS += verticalKm / layer.vs;
+    remainingDepth -= layerThickness;
+    prevDepth = layer.depth;
+  }
+
+  const surfaceLayer = layers[0];
+  tP += distanceKm / surfaceLayer.vp;
+  tS += distanceKm / surfaceLayer.vs;
+
+  return { tP, tS, deltaSP: tS - tP };
+}
+
+function computeBValue(events) {
+  if (!events || events.length < 3) return 1.0;
+  const mags = events.map(e => e.mag).filter(m => m >= 0);
+  if (mags.length < 3) return 1.0;
+  const Mmin = Math.min(...mags);
+  const Mmean = mags.reduce((a, b) => a + b, 0) / mags.length;
+  const b = Math.log10(Math.E) / Math.max(0.01, Mmean - (Mmin - 0.05));
+  return Math.max(0.3, Math.min(2.5, b));
+}
+
+function bayesianRiskIndex(entropyNorm, bValue, bandPRatio) {
+  const eTerm = 1 - entropyNorm;
+  const bTerm = Math.max(0, (1.5 - bValue) / 1.5);
+  const bandTerm = Math.max(0, Math.min(1, bandPRatio));
+  return CONFIG.BAYES_W_ENTROPY * eTerm +
+         CONFIG.BAYES_W_BVALUE * bTerm +
+         CONFIG.BAYES_W_BAND * bandTerm;
+}
+
+function calculateDynamicThreshold() {
+  const thetaBase = CONFIG.THETA_BASE;
+  const alpha = CONFIG.ALPHA_GNSS;
+  const beta = CONFIG.BETA_INGV;
+
+  const deltaH = STATE.gpsData.rate;
+  const bValue = STATE.bValueCurrent;
+  const aSuolo = STATE.currentGeoZone.A_suolo;
+
+  const gnssFactor = Math.min(0.5, alpha * deltaH);
+  const ingvFactor = Math.min(0.3, Math.max(0, beta * (1.2 - bValue)));
+
+  const numerator = 1 - gnssFactor - ingvFactor;
+  const thetaCritica = (thetaBase * Math.max(0.3, numerator)) / Math.max(0.5, aSuolo);
+
+  return Math.max(0.4, Math.min(1.2, thetaCritica));
+}
+
+function updateDynamicThresholdUI() {
+  const theta = calculateDynamicThreshold();
+  STATE.dynamicThreshold = theta;
+
+  $('thresholdValue').textContent = theta.toFixed(2);
+  $('gpsRate').textContent = STATE.gpsData.rate.toFixed(1);
+  $('bValueDisplay').textContent = STATE.bValueCurrent.toFixed(2);
+  $('ampFactor').textContent = STATE.currentGeoZone.A_suolo.toFixed(1);
+
+  $('factorGPS').className = 'threshold-factor' + (STATE.gpsData.rate > 3 ? ' critical' : STATE.gpsData.rate > 2 ? ' warn' : '');
+  $('factorBvalue').className = 'threshold-factor' + (STATE.bValueCurrent < 0.8 ? ' critical' : STATE.bValueCurrent < 1.0 ? ' warn' : '');
+  $('factorAmp').className = 'threshold-factor' + (STATE.currentGeoZone.A_suolo > 2.0 ? ' warn' : '');
+
+  const thresholdEl = $('thresholdValue');
+  if (theta < 0.55) thresholdEl.style.color = 'var(--danger-hi)';
+  else if (theta < 0.70) thresholdEl.style.color = 'var(--warn)';
+  else thresholdEl.style.color = 'var(--accent-hi)';
+}
+
+/* ============================================================
+   WEB WORKER v2.2 (invariato)
+   ============================================================ */
+const WORKER_CODE = `
+'use strict';
+const BS = 64;
+const STRIDE = 16;
+const RMAX = 512;
+const HMAX = 256;
+
+let bufX = new Float32Array(BS), bufY = new Float32Array(BS), bufZ = new Float32Array(BS);
+let tsBuf = new Float32Array(BS);
+let cx = new Float32Array(BS), cy = new Float32Array(BS), cz = new Float32Array(BS);
+let bufIdx = 0, bufFilled = false, sampleCount = 0;
+
+let alpha = 0, beta = 0, gamma = 0;
+let alphaDeg = 0, betaDeg = 0, gammaDeg = 0;
+let lastOrientMs = 0, rotRate = 0;
+
+let hpB0 = 0, hpB1 = 0, hpB2 = 0, hpA1 = 0, hpA2 = 0;
+let lpB0 = 0, lpB1 = 0, lpB2 = 0, lpA1 = 0, lpA2 = 0;
+let fRate = 50, lastFilterRate = 0;
+const filt = [
+  { x1:0, x2:0, y1:0, y2:0, u1:0, u2:0, v1:0, v2:0 },
+  { x1:0, x2:0, y1:0, y2:0, u1:0, u2:0, v1:0, v2:0 },
+  { x1:0, x2:0, y1:0, y2:0, u1:0, u2:0, v1:0, v2:0 }
+];
+
+let fX = new Float32Array(RMAX), fY = new Float32Array(RMAX), fZ = new Float32Array(RMAX);
+let resMag = new Float32Array(RMAX);
+let fIdx = 0, fCount = 0;
+
+let hX = new Float32Array(HMAX), hY = new Float32Array(HMAX), hZ = new Float32Array(HMAX);
+let hIdx = 0, hCount = 0;
+let floorX = 0.05, floorY = 0.05, floorZ = 0.05;
+
+let calibArrX = [], calibArrY = [], calibArrZ = [];
+let calibStart = 0, calibDone = false;
+const CALIB_MIN = 12, CALIB_MAX_MS = 20000, CALIB_CAP = 0.35;
+
+let candActive = false, candStart = 0, candPeak = 0, candAxes = 0, candEmitted = false;
+
+let K = 3.0;
+let analysisCount = 0;
+let lastBandShare = 0;
+
+function eulerRotate(x, y, z, a, b, g) {
+  const ca = Math.cos(a), sa = Math.sin(a);
+  const cb = Math.cos(b), sb = Math.sin(b);
+  const cg = Math.cos(g), sg = Math.sin(g);
+  const x1 = x*cb*ca + y*(sa*sg - ca*sb*cg) + z*(ca*sb*sg + sa*cg);
+  const y1 = -x*cb*sa + y*(ca*sg + sa*sb*cg) + z*(-sa*sb*sg + ca*cg);
+  const z1 = x*sb + y*cb*cg - z*cb*sg;
+  return [x1, y1, z1 - 9.81];
+}
+
+function computeDFT(signal) {
+  const N = signal.length;
+  const spec = new Float32Array(N/2);
+  for (let k = 0; k < N/2; k++) {
+    let re = 0, im = 0;
+    for (let n = 0; n < N; n++) {
+      const ang = -2 * Math.PI * k * n / N;
+      re += signal[n] * Math.cos(ang);
+      im += signal[n] * Math.sin(ang);
+    }
+    spec[k] = Math.sqrt(re*re + im*im) / N;
+  }
+  return spec;
+}
+
+function powerIteration(M, iters) {
+  let v = [1, 1, 1];
+  let lambda = 0;
+  for (let i = 0; i < iters; i++) {
+    const nv = [
+      M[0]*v[0] + M[1]*v[1] + M[2]*v[2],
+      M[3]*v[0] + M[4]*v[1] + M[5]*v[2],
+      M[6]*v[0] + M[7]*v[1] + M[8]*v[2]
+    ];
+    lambda = Math.sqrt(nv[0]*nv[0] + nv[1]*nv[1] + nv[2]*nv[2]);
+    if (lambda < 1e-10) return { lambda: 0, vector: [0,0,0] };
+    v = [nv[0]/lambda, nv[1]/lambda, nv[2]/lambda];
+  }
+  return { lambda: lambda, vector: v };
+}
+
+function eigenSymmetric3x3(M) {
+  const a = M[0], b = M[4], c = M[8];
+  const d = M[1], e = M[2], f = M[5];
+  const p1 = d*d + e*e + f*f;
+  if (p1 < 1e-20) return [a, b, c].sort(function(x,y){return y-x;});
+  const q = (a + b + c) / 3;
+  const p2 = (a-q)*(a-q) + (b-q)*(b-q) + (c-q)*(c-q) + 2*p1;
+  const p = Math.sqrt(p2 / 6);
+  const B = [
+    [(a-q)/p, d/p, e/p],
+    [d/p, (b-q)/p, f/p],
+    [e/p, f/p, (c-q)/p]
+  ];
+  const detB = B[0][0]*(B[1][1]*B[2][2]-B[1][2]*B[2][1])
+             - B[0][1]*(B[1][0]*B[2][2]-B[1][2]*B[2][0])
+             + B[0][2]*(B[1][0]*B[2][1]-B[1][1]*B[2][0]);
+  let r = detB / 2;
+  r = Math.max(-1, Math.min(1, r));
+  const phi = Math.acos(r) / 3;
+  const eig1 = q + 2*p*Math.cos(phi);
+  const eig3 = q + 2*p*Math.cos(phi + (2*Math.PI/3));
+  const eig2 = 3*q - eig1 - eig3;
+  return [eig1, eig2, eig3].sort(function(x,y){return y-x;});
+}
+
+function purifiedEntropy(covEigenvalues) {
+  const s1 = covEigenvalues[0], s2 = covEigenvalues[1];
+  const sum = s1 + s2;
+  if (sum < 1e-10) return 1.0;
+  const l1 = s1 / sum, l2 = s2 / sum;
+  let S = 0;
+  if (l1 > 1e-10) S -= l1 * Math.log(l1);
+  if (l2 > 1e-10) S -= l2 * Math.log(l2);
+  return S / Math.log(2);
+}
+
+function measureRate() {
+  const diffs = [];
+  for (let i = 1; i < BS; i++) {
+    const d = tsBuf[i] - tsBuf[i-1];
+    if (d > 0 && d < 500) diffs.push(d);
+  }
+  if (!diffs.length) return 50;
+  diffs.sort(function(a,b){return a-b;});
+  const med = diffs[diffs.length >> 1];
+  return Math.max(20, Math.min(120, 1000 / med));
+}
+
+function rmsWindow(ring, nUse) {
+  let s = 0;
+  for (let i = 0; i < nUse; i++) {
+    const v = ring[(fIdx - 1 - i + 2*RMAX) % RMAX];
+    s += v * v;
+  }
+  return Math.sqrt(s / nUse);
+}
+
+function pgaWindow(nUse) {
+  let m = 0;
+  for (let i = 0; i < nUse; i++) {
+    const v = resMag[(fIdx - 1 - i + 2*RMAX) % RMAX];
+    if (v > m) m = v;
+  }
+  return m;
+}
+
+function medianCap(ring, count, cap) {
+  const tmp = [];
+  for (let i = 0; i < count; i++) { const v = ring[i]; if (v <= cap) tmp.push(v); }
+  if (!tmp.length) return 0;
+  tmp.sort(function(a,b){return a-b;});
+  return tmp[tmp.length >> 1];
+}
+
+function medianArr(arr) {
+  if (!arr.length) return 0;
+  const t = arr.slice().sort(function(a,b){return a-b;});
+  return t[t.length >> 1];
+}
+
+self.onmessage = function(ev) {
+  const type = ev.data.type;
+  const payload = ev.data.payload;
+
+  if (type === 'config') {
+    if (payload && payload.K > 0) K = payload.K;
+    return;
+  }
+
+  if (type === 'orientation') {
+    const nowMs = Date.now();
+    const a = payload.a || 0, b = payload.b || 0, g = payload.g || 0;
+    if (lastOrientMs > 0) {
+      const dt = Math.max(20, nowMs - lastOrientMs);
+      const dA = Math.abs(a - alphaDeg);
+      const dB = Math.abs(b - betaDeg);
+      const dG = Math.abs(g - gammaDeg);
+      rotRate = 0.8 * rotRate + 0.2 * ((dA + dB + dG) / dt * 1000);
+    }
+    alphaDeg = a; betaDeg = b; gammaDeg = g;
+    lastOrientMs = nowMs;
+    alpha = alphaDeg * Math.PI / 180;
+    beta = betaDeg * Math.PI / 180;
+    gamma = gammaDeg * Math.PI / 180;
+    return;
+  }
+
+  if (type === 'sample') {
+    const x = payload.x, y = payload.y, z = payload.z;
+    if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return;
+    const rot = eulerRotate(x, y, z, alpha, beta, gamma);
+    const gx = rot[0], gy = rot[1], gz = rot[2];
+
+    const bx = filterAxis(0, gx);
+    const by = filterAxis(1, gy);
+    const bz = filterAxis(2, gz);
+
+    fX[fIdx] = bx; fY[fIdx] = by; fZ[fIdx] = bz;
+    resMag[fIdx] = Math.sqrt(bx*bx + by*by + bz*bz);
+    fIdx = (fIdx + 1) % RMAX;
+    if (fCount < RMAX) fCount++;
+
+    bufX[bufIdx] = gx; bufY[bufIdx] = gy; bufZ[bufIdx] = gz;
+    tsBuf[bufIdx] = payload.t || 0;
+    bufIdx = (bufIdx + 1) % BS;
+    if (bufIdx === 0) bufFilled = true;
+    sampleCount++;
+
+    if (!bufFilled) return;
+    if (sampleCount % STRIDE !== 0) return;
+
+    const rate = measureRate();
+    if (Math.abs(rate - lastFilterRate) > 5) {
+      computeBiquads(rate);
+      lastFilterRate = rate;
+    }
+
+    const nUse = Math.max(24, Math.min(fCount, Math.round(rate * 3)));
+    const rmsX = rmsWindow(fX, nUse);
+    const rmsY = rmsWindow(fY, nUse);
+    const rmsZ = rmsWindow(fZ, nUse);
+    const pga = pgaWindow(nUse);
+
+    hX[hIdx] = rmsX; hY[hIdx] = rmsY; hZ[hIdx] = rmsZ;
+    hIdx = (hIdx + 1) % HMAX;
+    if (hCount < HMAX) hCount++;
+
+    const nowMs = Date.now();
+    if (!calibDone) {
+      if (calibStart === 0) calibStart = nowMs;
+      if (Math.max(rmsX, rmsY, rmsZ) < CALIB_CAP) {
+        calibArrX.push(rmsX); calibArrY.push(rmsY); calibArrZ.push(rmsZ);
+      }
+      if (calibArrX.length >= CALIB_MIN) {
+        floorX = Math.max(0.03, medianArr(calibArrX));
+        floorY = Math.max(0.03, medianArr(calibArrY));
+        floorZ = Math.max(0.03, medianArr(calibArrZ));
+        calibDone = true;
+      } else if (nowMs - calibStart > CALIB_MAX_MS) {
+        floorX = calibArrX.length >= 4 ? Math.max(0.03, medianArr(calibArrX)) : 0.05;
+        floorY = calibArrY.length >= 4 ? Math.max(0.03, medianArr(calibArrY)) : 0.05;
+        floorZ = calibArrZ.length >= 4 ? Math.max(0.03, medianArr(calibArrZ)) : 0.05;
+        calibDone = true;
+      }
+    } else {
+      analysisCount++;
+      if (analysisCount % 16 === 0) {
+        const mx = medianCap(hX, hCount, Math.max(0.2, 4 * floorX));
+        const my = medianCap(hY, hCount, Math.max(0.2, 4 * floorY));
+        const mz = medianCap(hZ, hCount, Math.max(0.2, 4 * floorZ));
+        if (mx > 0) floorX = Math.max(0.03, mx);
+        if (my > 0) floorY = Math.max(0.03, my);
+        if (mz > 0) floorZ = Math.max(0.03, mz);
+      }
+    }
+
+    const thrX = floorX * K, thrY = floorY * K, thrZ = floorZ * K;
+    let axesOver = 0;
+    if (rmsX > thrX) axesOver++;
+    if (rmsY > thrY) axesOver++;
+    if (rmsZ > thrZ) axesOver++;
+    const thrAvg = (thrX + thrY + thrZ) / 3;
+    const rmsMax = Math.max(rmsX, rmsY, rmsZ);
+
+    if (!candActive) {
+      if ((axesOver >= 2 && calibDone) || pga > 3.5) {
+        candActive = true;
+        candStart = nowMs;
+        candPeak = pga;
+        candAxes = axesOver;
+        candEmitted = false;
+      }
+    } else {
+      if (rotRate > 40 && pga < 3.5) {
+        candActive = false;
+      } else if (axesOver >= 2 || pga > 3.5) {
+        if (pga > candPeak) candPeak = pga;
+        if (axesOver > candAxes) candAxes = axesOver;
+        const dur = nowMs - candStart;
+        if (!candEmitted && dur >= 500) {
+          candEmitted = true;
+          self.postMessage({
+            type: 'candidate',
+            pga: candPeak,
+            rms: rmsMax,
+            axesOver: candAxes,
+            durationMs: dur,
+            snr: candPeak / Math.max(0.01, thrAvg),
+            bandShare: lastBandShare,
+            rotRate: rotRate
+          });
+        }
+      } else {
+        candActive = false;
+      }
+    }
+
+    let meanX = 0, meanY = 0, meanZ = 0;
+    for (let i = 0; i < BS; i++) { meanX += bufX[i]; meanY += bufY[i]; meanZ += bufZ[i]; }
+    meanX /= BS; meanY /= BS; meanZ /= BS;
+
+    const cov = new Float32Array(9);
+    for (let i = 0; i < BS; i++) {
+      const dx = cx[i] = bufX[i] - meanX;
+      const dy = cy[i] = bufY[i] - meanY;
+      const dz = cz[i] = bufZ[i] - meanZ;
+      cov[0] += dx*dx; cov[1] += dx*dy; cov[2] += dx*dz;
+      cov[3] += dy*dx; cov[4] += dy*dy; cov[5] += dy*dz;
+      cov[6] += dz*dx; cov[7] += dz*dy; cov[8] += dz*dz;
+    }
+    for (let i = 0; i < 9; i++) cov[i] /= BS;
+
+    const pi = powerIteration(cov, 10);
+    const eigs = eigenSymmetric3x3(cov);
+    const entropy = purifiedEntropy(eigs);
+
+    const spec = computeDFT(cz);
+    const freqRes = rate / BS;
+    let energyP = 0, energyNoise = 0, energyTotal = 0, energy110 = 0;
+    let peakBin = 0, peakAmp = 0;
+    for (let k = 0; k < spec.length; k++) {
+      const f = k * freqRes;
+      const e = spec[k] * spec[k];
+      energyTotal += e;
+      if (f >= 5 && f <= 15) energyP += e;
+      if (f >= 1 && f <= 10) energy110 += e;
+      if (f < 3) energyNoise += e;
+      if (spec[k] > peakAmp && f >= 1) { peakAmp = spec[k]; peakBin = k; }
+    }
+    const bandPRatio = energyTotal > 0 ? energyP / energyTotal : 0;
+    lastBandShare = energyTotal > 0 ? energy110 / energyTotal : 0;
+    const peakFreqP = peakBin * freqRes;
+
+    const vec = pi.vector;
+    const azimuth = (Math.atan2(vec[0], vec[1]) * 180 / Math.PI + 360) % 360;
+
+    self.postMessage({
+      type: 'analysis',
+      lambda1: pi.lambda,
+      entropy: entropy,
+      cov: Array.from(cov),
+      spectrum: Array.from(spec),
+      bandPRatio: bandPRatio,
+      azimuth: azimuth,
+      peakFreqP: peakFreqP,
+      seismogram: Array.from(cz),
+      sampleRate: rate,
+      rms: pga,
+      pgaMin: thrAvg,
+      calibDone: calibDone
+    });
+    return;
+  }
+
+  if (type === 'reset') {
+    bufX.fill(0); bufY.fill(0); bufZ.fill(0);
+    tsBuf.fill(0);
+    fX.fill(0); fY.fill(0); fZ.fill(0);
+    resMag.fill(0);
+    hX.fill(0); hY.fill(0); hZ.fill(0);
+    bufIdx = 0; bufFilled = false; sampleCount = 0;
+    fIdx = 0; fCount = 0; hIdx = 0; hCount = 0;
+    floorX = 0.05; floorY = 0.05; floorZ = 0.05;
+    calibArrX = []; calibArrY = []; calibArrZ = [];
+    calibStart = 0; calibDone = false;
+    candActive = false; candEmitted = false; candPeak = 0; candAxes = 0;
+    analysisCount = 0; rotRate = 0; lastOrientMs = 0;
+    computeBiquads(50);
+    lastFilterRate = 50;
+  }
+};
+
+function filterAxis(i, x) {
+  const f = filt[i];
+  const yh = hpB0 * x + hpB1 * f.x1 + hpB2 * f.x2 - hpA1 * f.y1 - hpA2 * f.y2;
+  f.x2 = f.x1; f.x1 = x; f.y2 = f.y1; f.y1 = yh;
+  const yl = lpB0 * yh + lpB1 * f.u1 + lpB2 * f.u2 - lpA1 * f.v1 - lpA2 * f.v2;
+  f.u2 = f.u1; f.u1 = yh; f.v2 = f.v1; f.v1 = yl;
+  return yl;
+}
+
+function computeBiquads(rate) {
+  const Q = 1.41421356;
+  const w0h = 2 * Math.PI * 0.8 / rate;
+  const ch = Math.cos(w0h), sh = Math.sin(w0h);
+  const ah = sh / Q;
+  let a0 = 1 + ah;
+  hpB0 = ((1 + ch) / 2) / a0;
+  hpB1 = (-(1 + ch)) / a0;
+  hpB2 = hpB0;
+  hpA1 = (-2 * ch) / a0;
+  hpA2 = (1 - ah) / a0;
+  const w0l = 2 * Math.PI * 10 / rate;
+  const cl = Math.cos(w0l), sl = Math.sin(w0l);
+  const al = sl / Q;
+  a0 = 1 + al;
+  lpB0 = ((1 - cl) / 2) / a0;
+  lpB1 = (1 - cl) / a0;
+  lpB2 = lpB0;
+  lpA1 = (-2 * cl) / a0;
+  lpA2 = (1 - al) / a0;
+  for (let i = 0; i < 3; i++) {
+    filt[i].x1 = 0; filt[i].x2 = 0; filt[i].y1 = 0; filt[i].y2 = 0;
+    filt[i].u1 = 0; filt[i].u2 = 0; filt[i].v1 = 0; filt[i].v2 = 0;
+  }
+}
+computeBiquads(50);
+lastFilterRate = 50;
+`;
+
+function initWorker() {
+  try {
+    const blob = new Blob([WORKER_CODE], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
+    STATE.worker = new Worker(url);
+    STATE.worker.onmessage = handleWorkerMessage;
+    STATE.worker.onerror = (e) => console.error('Worker error:', e.message || e);
+  } catch (e) {
+    console.error('Worker init fail:', e);
+  }
+}
+
+let motionHandler = null;
+let orientHandler = null;
+
+async function startSensor() {
+  if (STATE.engineActive) return;
+
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    try {
+      const perm = await DeviceMotionEvent.requestPermission();
+      if (perm !== 'granted') {
+        showToast('Permesso sensore negato (iOS)', 'error');
+        return;
+      }
+    } catch (e) {
+      showToast('Errore permessi iOS', 'error');
+      return;
+    }
+  }
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try { await DeviceOrientationEvent.requestPermission(); } catch(e) {}
+  }
+
+  motionHandler = (ev) => {
+    const a = ev.accelerationIncludingGravity || ev.acceleration;
+    if (!a) return;
+    if (STATE.worker) {
+      STATE.worker.postMessage({
+        type: 'sample',
+        payload: { x: a.x || 0, y: a.y || 0, z: a.z || 0, t: ev.timeStamp || performance.now() }
+      });
+    }
+  };
+  orientHandler = (ev) => {
+    if (STATE.worker) {
+      STATE.worker.postMessage({
+        type: 'orientation',
+        payload: { a: ev.alpha || 0, b: ev.beta || 0, g: ev.gamma || 0 }
+      });
+    }
+  };
+
+  window.addEventListener('devicemotion', motionHandler, { passive: true });
+  window.addEventListener('deviceorientation', orientHandler, { passive: true });
+
+  try {
+    if ('wakeLock' in navigator) STATE.wakeLock = await navigator.wakeLock.request('screen');
+  } catch (e) { }
+
+  try {
+    if (!STATE.audioCtx) STATE.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (STATE.audioCtx.state === 'suspended') await STATE.audioCtx.resume();
+    const osc = STATE.audioCtx.createOscillator();
+    const gain = STATE.audioCtx.createGain();
+    gain.gain.value = CONFIG.AUDIO_GAIN;
+    osc.frequency.value = 20;
+    osc.connect(gain).connect(STATE.audioCtx.destination);
+    osc.start();
+    STATE.oscillator = { osc, gain };
+  } catch (e) { }
+
+  STATE.engineActive = true;
+  STATE.calibDone = false;
+  $('btnToggle').classList.add('active');
+  $('btnToggle').querySelector('span').textContent = 'PROTEZIONE ATTIVA — TOCCA PER FERMARE';
+  const cs = $('calibStatus');
+  if (cs) { cs.textContent = 'calibrazione in corso (tieni fermo il telefono)...'; cs.style.color = 'var(--warn)'; }
+
+  if (STATE.worker) {
+    STATE.worker.postMessage({ type: 'reset' });
+    STATE.worker.postMessage({ type: 'config', K: SENS_LEVELS[STATE.sensitivity].K });
+  }
+  showToast('Protezione attiva — calibrazione: tieni fermo il telefono', 'success');
+}
+
+function stopSensor() {
+  if (!STATE.engineActive) return;
+  if (motionHandler) window.removeEventListener('devicemotion', motionHandler);
+  if (orientHandler) window.removeEventListener('deviceorientation', orientHandler);
+  if (STATE.oscillator) {
+    try { STATE.oscillator.osc.stop(); } catch(e) {}
+    STATE.oscillator = null;
+  }
+  if (STATE.wakeLock) {
+    STATE.wakeLock.release().catch(()=>{});
+    STATE.wakeLock = null;
+  }
+  STATE.engineActive = false;
+  $('btnToggle').classList.remove('active');
+  $('btnToggle').querySelector('span').textContent = 'AVVIA PROTEZIONE TERREMOTO';
+}
+
+function toggleSensor() {
+  if (STATE.engineActive) stopSensor();
+  else startSensor();
+}
+
+function fitCanvas(cvs) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.floor(cvs.clientWidth * dpr));
+  const h = Math.max(1, Math.floor(cvs.clientHeight * dpr));
+  if (cvs._w !== w || cvs._h !== h) { cvs.width = w; cvs.height = h; cvs._w = w; cvs._h = h; }
+  return [w, h];
+}
+
+async function askCrowdConfirmation() {
+  const proxy = ProxyConfig.get();
+  if (!proxy || !STATE.userPos) return 0;
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), CONFIG.TRIGGER_TIMEOUT);
+    const res = await fetch(proxy + '/trigger', {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lat: Math.round(STATE.userPos.lat * 1000) / 1000,
+        lon: Math.round(STATE.userPos.lon * 1000) / 1000,
+        dev: getDeviceId()
+      })
+    });
+    clearTimeout(to);
+    const j = await res.json();
+    return (j && j.n) ? j.n : 0;
+  } catch (e) { return 0; }
+}
+
+function computeConfidence(d, crowdN) {
+  let conf = 0;
+  conf += d.axesOver >= 3 ? 40 : 30;
+
+  let durFactor = Math.min(1, d.durationMs / 3000);
+  if (d.pga > 1.0) durFactor = Math.max(0.30, durFactor);
+  if (d.pga > 2.0) durFactor = Math.max(0.50, durFactor);
+  if (d.pga > 3.5) durFactor = Math.max(0.75, durFactor);
+  conf += Math.round(10 + 15 * durFactor);
+
+  conf += Math.round(15 * Math.min(1, d.snr / 6));
+  conf += Math.round(10 * Math.min(1, d.bandShare / 0.7));
+
+  if (d.pga > 0.8) {
+    conf += Math.round(5 * Math.min(4, (d.pga - 0.8) / 0.8));
+  }
+
+  if (STATE.coherenceFlag) conf += 15;
+  if (crowdN >= CONFIG.CROWD_MIN_DEVICES) conf += 25;
+  return Math.min(100, conf);
+}
+
+async function handleCandidate(d) {
+  const crowdN = await askCrowdConfirmation();
+  const conf = computeConfidence(d, crowdN);
+  STATE.lastConfidence = { conf: conf, crowdN: crowdN, d: d };
+  $('confVal').textContent = conf + '%';
+
+  const sens = SENS_LEVELS[STATE.sensitivity];
+  const now = Date.now();
+  const cooldownOk = (now - STATE.lastAlarmAt) > CONFIG.ALARM_COOLDOWN;
+  const suppressed = now < STATE.suppressUntil;
+  if (!cooldownOk || suppressed) return;
+
+  if (d.pga > CONFIG.PGA_OVERRIDE || conf >= sens.thrConf) {
+    const srew = STATE.srewData;
+    triggerAlarm(srew, 0, { conf: conf, crowdN: crowdN, d: d });
+  }
+}
+
+function handleWorkerMessage(ev) {
+  const d = ev.data;
+  if (d.type === 'candidate') { handleCandidate(d); return; }
+  if (d.type !== 'analysis') return;
+
+  $('rmsVal').textContent = d.rms.toFixed(2);
+  $('pgaMinVal').textContent = d.pgaMin.toFixed(2);
+  if (d.calibDone && !STATE.calibDone) {
+    STATE.calibDone = true;
+    const cs = $('calibStatus');
+    if (cs) { cs.textContent = 'calibrato sul rumore di casa tua ✓'; cs.style.color = 'var(--ok)'; }
+    showToast('✓ Sensore calibrato sul rumore di casa tua', 'success');
+  }
+
+  const entropyEl = $('mEntropy');
+  const lambdaEl = $('mLambda');
+  const riskEl = $('mRiskIdx');
+  const bandPEl = $('mBandP');
+
+  entropyEl.querySelector('.value').textContent = d.entropy.toFixed(2);
+  entropyEl.classList.toggle('alert', d.entropy < STATE.dynamicThreshold);
+
+  lambdaEl.querySelector('.value').textContent = d.lambda1.toFixed(2);
+  lambdaEl.classList.toggle('ok', d.lambda1 > CONFIG.LAMBDA1_THRESHOLD);
+
+  bandPEl.querySelector('.value').textContent = (d.bandPRatio * 100).toFixed(0) + '%';
+  bandPEl.classList.toggle('ok', d.bandPRatio >= CONFIG.BAND_P_THRESHOLD);
+
+  const bValue = computeBValue(STATE.ingvEvents);
+  STATE.bValueCurrent = bValue;
+  const riskIndex = bayesianRiskIndex(d.entropy, bValue, d.bandPRatio);
+  riskEl.querySelector('.value').textContent = riskIndex.toFixed(2);
+  riskEl.classList.toggle('alert', riskIndex >= CONFIG.RISK_INDEX_THRESHOLD);
+
+  $('bValueDisplay').textContent = bValue.toFixed(2);
+
+  STATE.coherenceFlag = (d.entropy < STATE.dynamicThreshold) &&
+                        (d.lambda1 > CONFIG.LAMBDA1_THRESHOLD) &&
+                        (d.bandPRatio >= CONFIG.BAND_P_THRESHOLD);
+
+  const covCells = $('covMatrix').children;
+  for (let i = 0; i < 9; i++) covCells[i].textContent = d.cov[i].toFixed(2);
+
+  const dashOn = $('view-dashboard').classList.contains('active');
+  if (dashOn) {
+    drawFFTSpectrum(d.spectrum);
+    drawSeismogram(d.seismogram);
+  }
+
+  $('azimuthVal').textContent = d.azimuth.toFixed(0) + '°';
+  $('compassNeedle').style.transform = 'translate(-50%, -100%) rotate(' + d.azimuth + 'deg)';
+
+  const srew = calculateStructuralRisk(d.peakFreqP, CONFIG.DEFAULT_FLOORS);
+  STATE.srewData = { I_ris: srew.riskScore, critical: srew.isResonanceCritical, f_P: d.peakFreqP };
+  $('srewZone').textContent = srew.zona.replace('_', ' · ');
+  $('srewIndex').textContent = srew.riskScore.toFixed(2);
+  $('srewAmp').textContent = srew.A_suolo.toFixed(1);
+  $('srewFsoil').textContent = srew.f_suolo.toFixed(1);
+  $('srewFbld').textContent = srew.f_edificio.toFixed(1);
+  $('srewBar').style.width = Math.min(100, srew.riskScore / 3 * 100) + '%';
+  $('srewCard').classList.toggle('critical', srew.isResonanceCritical);
+
+  $('ampFactor').textContent = srew.A_suolo.toFixed(1);
+  updateDynamicThresholdUI();
+}
+
+function drawFFTSpectrum(spec) {
+  const cvs = $('cvsSpec');
+  if (!cvs) return;
+  const dims = fitCanvas(cvs);
+  const w = dims[0], h = dims[1];
+  const ctx = cvs.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+
+  let maxAmp = 0.001;
+  for (let i = 0; i < spec.length; i++) if (spec[i] > maxAmp) maxAmp = spec[i];
+  const freqRes = 50 / CONFIG.BUFFER_SIZE;
+  const barW = w / spec.length;
+
+  for (let k = 0; k < spec.length; k++) {
+    const f = k * freqRes;
+    if (f > 25) break;
+    const barH = (spec[k] / maxAmp) * h * 0.9;
+    let color = '#222222';
+    if (f >= 5 && f <= 15) color = 'rgba(16, 185, 129, 0.55)';
+    else if (f < 3) color = '#3a3a3a';
+    ctx.fillStyle = color;
+    ctx.fillRect(k * barW, h - barH, barW - 1, barH);
+  }
+}
+
+function drawSeismogram(sig) {
+  const cvs = $('cvsSeismo');
+  if (!cvs) return;
+  const dims = fitCanvas(cvs);
+  const w = dims[0], h = dims[1];
+  const ctx = cvs.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+
+  let maxV = 0.1;
+  for (let i = 0; i < sig.length; i++) { const a = Math.abs(sig[i]); if (a > maxV) maxV = a; }
+  ctx.strokeStyle = '#a78bfa';
+  ctx.lineWidth = 1.5 * (window.devicePixelRatio || 1);
+  ctx.beginPath();
+  for (let i = 0; i < sig.length; i++) {
+    const x = (i / (sig.length - 1)) * w;
+    const y = h / 2 - (sig[i] / maxV) * (h / 2) * 0.9;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(16, 185, 129, 0.22)';
+  ctx.beginPath();
+  ctx.moveTo(0, h/2); ctx.lineTo(w, h/2);
+  ctx.stroke();
+}
+
+function triggerAlarm(srew, riskIndex, confInfo) {
+  STATE.lastAlarmAt = Date.now();
+  if (bc) { try { bc.postMessage({ type: 'alarm', t: Date.now(), id: TAB_ID }); } catch (e) { } }
+
+  let distKm = 3;
+  if (STATE.userPos) {
+    distKm = haversineDistance(STATE.userPos.lat, STATE.userPos.lon, CONFIG.SOLFATARA.lat, CONFIG.SOLFATARA.lon);
+  }
+  const rt = stratifiedRayTracing(distKm, 2.0);
+  const countdownSec = Math.max(1, Math.round(rt.deltaSP));
+
+  const overlay = $('alarmOverlay');
+  overlay.classList.add('show');
+
+  const titleEl = $('alarmTitle');
+  const instrEl = $('alarmInstructions');
+  const isCritical = srew && srew.isResonanceCritical;
+
+  titleEl.textContent = isCritical ? '⚠️ PERICOLO — NON USARE LE SCALE' : '⚠️ TERREMOTO IN ARRIVO';
+
+  if (isCritical) {
+    instrEl.innerHTML = `<ul>
+      <li><strong>NON fuggire sulle scale</strong></li>
+      <li>Mettiti ORA sotto un tavolo robusto o una trave portante</li>
+      <li>Proteggi testa e collo con le braccia</li>
+      <li>Stai lontano da vetrate e scaffali</li>
+      <li>Aspetta la fine della scossa prima di muoverti</li>
+    </ul>`;
+  } else {
+    instrEl.innerHTML = `<ul>
+      <li>La scossa forte arriva tra <strong>${countdownSec} secondi</strong> (stima approssimativa)</li>
+      <li>Mantieni la calma</li>
+      <li>Stai lontano da vetrate e scaffali</li>
+      <li>Se sei vicino a un'uscita sicura, esci con calma</li>
+      <li>Se sei all'aperto, allontanati da edifici e fili elettrici</li>
+    </ul>`;
+  }
+
+  if (confInfo) {
+    const reasons = [];
+    reasons.push(confInfo.d.axesOver + ' assi attivi');
+    reasons.push((confInfo.d.durationMs / 1000).toFixed(1) + ' s');
+    reasons.push('PGA ' + confInfo.d.pga.toFixed(1) + ' m/s²');
+    if (confInfo.crowdN >= CONFIG.CROWD_MIN_DEVICES) reasons.push('confermato da ' + confInfo.crowdN + ' dispositivi');
+    $('confLine').innerHTML = 'CONFIDENZA <strong>' + confInfo.conf + '%</strong> — ' + reasons.join(' · ');
+  } else {
+    $('confLine').textContent = '';
+  }
+
+  $('countdownNum').textContent = countdownSec;
+  $('countdownLabel').textContent = isCritical ? 'Mettiti al sicuro ORA' : 'La scossa forte arriva tra (stima approssimativa)';
+
+  playSynthAlarm();
+
+  if ('vibrate' in navigator) navigator.vibrate([300, 100, 300, 100, 300, 100, 600]);
+  speakVoiceAlert(isCritical);
+
+  let remaining = countdownSec;
+  clearInterval(overlay._cd);
+  overlay._cd = setInterval(() => {
+    remaining--;
+    if (remaining <= 0 || !overlay.classList.contains('show')) {
+      clearInterval(overlay._cd);
+      $('countdownNum').textContent = 'IMPATTO';
+    } else {
+      $('countdownNum').textContent = remaining;
+    }
+  }, 1000);
+
+  if ('Notification' in window && Notification.permission === 'granted') {
+    try {
+      new Notification('⚠️ ALLERTA SISMICA', {
+        body: isCritical ? 'NON usare le scale — mettiti sotto un tavolo' : ('Scossa forte tra ' + countdownSec + 's'),
+        tag: 'seismic-alert',
+        requireInteraction: true
+      });
+    } catch(e) {}
+  }
+}
+
+function stopAlarm() {
+  $('alarmOverlay').classList.remove('show');
+  clearInterval($('alarmOverlay')._cd);
+  if (STATE.alarmOscillators) {
+    STATE.alarmOscillators.forEach(o => { try { o.stop(); } catch(e) {} });
+    STATE.alarmOscillators = null;
+  }
+  window.speechSynthesis.cancel();
+  if ('vibrate' in navigator) navigator.vibrate([]);
+}
+
+function playSynthAlarm() {
+  try {
+    if (!STATE.audioCtx) STATE.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = STATE.audioCtx;
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc1.type = 'sawtooth'; osc2.type = 'square';
+    osc1.frequency.value = 800; osc2.frequency.value = 400;
+    gain.gain.value = 0.15;
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    lfo.frequency.value = 3;
+    lfoGain.gain.value = 200;
+    lfo.connect(lfoGain).connect(osc1.frequency);
+    osc1.connect(gain); osc2.connect(gain);
+    gain.connect(ctx.destination);
+    osc1.start(); osc2.start(); lfo.start();
+    STATE.alarmOscillators = [osc1, osc2, lfo];
+  } catch(e) { }
+}
+
+function speakVoiceAlert(isCritical) {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const msg = new SpeechSynthesisUtterance();
+    msg.lang = 'it-IT';
+    msg.rate = 1.1;
+    msg.pitch = 1.0;
+    msg.text = isCritical ?
+      'Pericolo! Non usare le scale! Mettiti ora sotto un tavolo robusto!' :
+      'Terremoto in arrivo. Mantieni la calma. Allontanati da vetrate e scaffali. Non chiamare il 112 salvo pericolo immediato.';
+    window.speechSynthesis.speak(msg);
+  } catch(e) {}
+}
+
+/* ============================================================
+   INGV DATA — HYBRID 9-TIER CORS PIPELINE (invariata)
+   ============================================================ */
+function buildINGVQueryParams() {
+  const bbox = CONFIG.BBOX;
+  const now = new Date();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+  const endStr = formatINGVDate(now);
+  const startStr = formatINGVDate(sevenDaysAgo);
+  return [
+    'starttime=' + startStr,
+    'endtime=' + endStr,
+    'minlatitude=' + bbox.minLat,
+    'maxlatitude=' + bbox.maxLat,
+    'minlongitude=' + bbox.minLon,
+    'maxlongitude=' + bbox.maxLon,
+    'format=geojson',
+    'limit=100'
+  ].join('&');
+}
+
+function buildINGVGateways() {
+  const params = buildINGVQueryParams();
+  const directURL = 'https://webservices.ingv.it/fdsnws/event/1/query?' + params;
+  const encoded = encodeURIComponent(directURL);
+
+  const gateways = [];
+
+  const proxyBase = ProxyConfig.get();
+  if (proxyBase) {
+    gateways.push({
+      name: 'CF Worker (Pro)',
+      level: 0,
+      url: proxyBase + '/fdsnws/event/1/query?' + params,
+      parser: 'direct'
+    });
+  }
+
+  gateways.push({
+    name: 'INGV Diretto' + (STATE.environment === 'webview' ? ' [WebView]' : ''),
+    level: 1,
+    url: directURL,
+    parser: 'direct'
+  });
+
+  if (STATE.environment === 'webview') {
+    return gateways;
+  }
+
+  gateways.push({
+    name: 'CORS Anywhere', level: 2,
+    url: 'https://cors-anywhere.herokuapp.com/' + directURL,
+    parser: 'direct',
+    headers: { 'x-requested-with': 'seismic-sentinel', 'Origin': 'https://seismic-sentinel.local' }
+  });
+  gateways.push({ name: 'CorsProxy.io', level: 3, url: 'https://corsproxy.io/?url=' + encoded, parser: 'direct' });
+  gateways.push({ name: 'AllOrigins /raw', level: 4, url: 'https://api.allorigins.win/raw?url=' + encoded, parser: 'direct' });
+  gateways.push({ name: 'AllOrigins /get', level: 5, url: 'https://api.allorigins.win/get?url=' + encoded, parser: 'wrapper' });
+  gateways.push({ name: 'CodeTabs', level: 6, url: 'https://api.codetabs.com/v1/proxy?quest=' + encoded, parser: 'direct' });
+  gateways.push({ name: 'CORSProxy.org', level: 7, url: 'https://corsproxy.org/?' + encoded, parser: 'direct' });
+  // // ponytail: CORS.sh key pubblica inaffidabile, priorità a CF Worker Pro
+  gateways.push({ name: 'CORS.sh', level: 8, url: 'https://proxy.cors.sh/' + directURL, parser: 'direct', headers: { 'x-cors-api-key': 'temp_free_seismic_sentinel' } });
+  gateways.push({ name: 'YACDN', level: 9, url: 'https://yacdn.org/serve/' + directURL, parser: 'direct' });
+
+  return gateways;
+}
+
+async function fetchWithTimeout(url, timeoutMs, extraHeaders) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: Object.assign({ 'Accept': 'application/json, text/plain, */*' }, extraHeaders || {}),
+      cache: 'no-store'
+    });
+    clearTimeout(timeout);
+    return res;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+async function tryGateway(gw) {
+  const res = await fetchWithTimeout(gw.url, CONFIG.INGV_TIMEOUT_PER_GATEWAY, gw.headers);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  let geojson;
+  if (gw.parser === 'wrapper') {
+    const wrapper = await res.json();
+    if (wrapper.contents) {
+      geojson = typeof wrapper.contents === 'string' ? JSON.parse(wrapper.contents) : wrapper.contents;
+    } else {
+      throw new Error('Wrapper response invalid');
+    }
+  } else {
+    const text = await res.text();
+    try { geojson = JSON.parse(text); } catch (e) { throw new Error('Invalid JSON response'); }
+  }
+  return geojson;
+}
+
+function parseINGVGeoJSON(geojson) {
+  if (!geojson || !geojson.features || !Array.isArray(geojson.features)) return [];
+  const events = geojson.features.map(f => {
+    const props = f.properties || {};
+    const coords = (f.geometry && f.geometry.coordinates) || [0, 0, 0];
+    const mag = props.mag !== undefined ? props.mag : (props.ml !== undefined ? props.ml : props.Ml);
+    const depth = coords[2] !== undefined ? Math.abs(coords[2]) : 2.0;
+    return {
+      id: String(props.eventId || props.id || Math.random().toString(36).slice(2)),
+      time: props.time || props.originTime || new Date().toISOString(),
+      lat: parseFloat(coords[1]) || 0,
+      lon: parseFloat(coords[0]) || 0,
+      depth: parseFloat(depth) || 2.0,
+      mag: parseFloat(mag) || 0,
+      magType: props.magType || props.magnitudeType || 'Ml'
+    };
+  }).filter(ev => !isNaN(ev.lat) && !isNaN(ev.lon));
+  return events.sort((a, b) => parseINGVTime(b.time).getTime() - parseINGVTime(a.time).getTime());
+}
+
+function updateINGVStatus(state, text) {
+  const statusEl = $('ingvStatus');
+  const textEl = $('ingvStatusText');
+  if (!statusEl || !textEl) return;
+  statusEl.className = 'ingv-status ' + state;
+  textEl.textContent = text;
+}
+
+async function fetchINGVData(retryCount) {
+  retryCount = retryCount || 0;
+  const gateways = buildINGVGateways();
+  updateINGVStatus('loading', 'Cascata ' + gateways.length + ' gateway (' + STATE.environment + ')...');
+
+  let lastError = null;
+  let succeededGateway = null;
+  let events = [];
+  let geojson = null;
+
+  for (let i = 0; i < gateways.length; i++) {
+    const gw = gateways[i];
+    try {
+      updateINGVStatus('loading', '[L' + gw.level + '] ' + gw.name + '...');
+      geojson = await tryGateway(gw);
+      events = parseINGVGeoJSON(geojson);
+      succeededGateway = gw;
+      lastError = null;
+      break;
+    } catch (e) {
+      lastError = e;
+      console.warn('[INGV] L' + gw.level + ' ' + gw.name + ' fallito:', e.message);
+    }
+  }
+
+  if (!succeededGateway) {
+    if (retryCount < CONFIG.INGV_MAX_RETRY) {
+      const delay = 2000 * Math.pow(2, retryCount) + Math.random() * 500;
+      updateINGVStatus('warn', 'Retry ' + (retryCount + 1) + ' tra ' + Math.round(delay/1000) + 's...');
+      setTimeout(() => fetchINGVData(retryCount + 1), delay);
+      return [];
+    }
+    STATE.ingvConsecutiveFailures++;
+    updateINGVStatus('err', 'Tutti i ' + gateways.length + ' gateway falliti');
+    $('ingvList').innerHTML =
+      '<div style="text-align:center;padding:20px;">' +
+      '<i class="fa-solid fa-triangle-exclamation" style="font-size:24px;color:var(--danger-hi);display:block;margin-bottom:8px;"></i>' +
+      '<div class="small" style="color:var(--danger-hi);margin-bottom:8px;font-family:var(--sans);font-size:14px;">Connessione ai dati INGV fallita</div>' +
+      '<div class="small" style="color:var(--fg-2);margin-bottom:6px;font-family:var(--sans);">Riproverò automaticamente tra 30 secondi.</div>' +
+      '<a href="https://terremoti.ingv.it/" target="_blank" rel="noopener" style="display:inline-block;padding:10px 14px;background:var(--green-soft);border:1px solid var(--green-hi);border-radius:6px;color:var(--accent-hi);font-size:12px;font-family:var(--mono);text-decoration:none;">' +
+      '<i class="fa-solid fa-arrow-up-right-from-square"></i> Verifica su terremoti.ingv.it</a></div>';
+    $('mirrorCounts').textContent = '';
+    return [];
+  }
+
+  STATE.ingvConsecutiveFailures = 0;
+  STATE.ingvEvents = events;
+  STATE.lastINGVUpdate = new Date();
+  STATE.lastGatewayUsed = succeededGateway.name;
+  STATE.bValueCurrent = computeBValue(events);
+  updateDynamicThresholdUI();
+
+  STATE.seismic24h = computeSeismicActivity24h(events);
+  const actEl = $('seismic24h');
+  if (actEl) actEl.textContent = '📊 24h: ' + STATE.seismic24h + ' eventi (INGV)';
+  if (STATE.three && STATE.three.setActivity) STATE.three.setActivity(STATE.seismic24h);
+
+  updateINGVStatus('ok', events.length + ' eventi (L' + succeededGateway.level + ': ' + succeededGateway.name + ')');
+
+  renderINGVEvents(events);
+  if (STATE.maps.mini) updateMapMarkers(events);
+  if (STATE.maps.full) updateMapMarkersFull(events);
+  if (STATE.three) {
+    update3DHypocenters(events);
+    if (STATE.three.triggerWaves) STATE.three.triggerWaves(events);
+  }
+  $('ingvTime').textContent = itTime(new Date(), false);
+  $('ingvCount').textContent = events.length;
+
+  return events;
+}
+
+/* ============================================================
+   BRADISISMO LIVE — cascata OV CORS-safe (invariata da v1.8.4)
+   ============================================================ */
+function updateBradyStatus(state, text) {
+  const statusEl = $('gpsStatus');
+  const textEl = $('gpsStatusText');
+  if (!statusEl || !textEl) return;
+  statusEl.className = 'gps-status ' + state;
+  textEl.textContent = text;
+}
+
+function buildOVGateways() {
+  const target = CONFIG.OV_STATO_URL;
+  const enc = encodeURIComponent(target);
+  const gws = [];
+
+  const proxyBase = ProxyConfig.get();
+  if (proxyBase) {
+    gws.push({ name: 'CF Worker (Pro) /ovstato', url: proxyBase + '/ovstato', parser: 'direct' });
+  }
+
+  if (STATE.environment === 'webview') {
+    gws.push({ name: 'OV diretto [WebView]', url: target, parser: 'direct' });
+  }
+
+  gws.push({ name: 'CorsProxy.io', url: 'https://corsproxy.io/?url=' + enc, parser: 'direct' });
+  gws.push({ name: 'AllOrigins /raw', url: 'https://api.allorigins.win/raw?url=' + enc, parser: 'direct' });
+  gws.push({ name: 'CodeTabs', url: 'https://api.codetabs.com/v1/proxy?quest=' + enc, parser: 'direct' });
+  gws.push({ name: 'AllOrigins /get', url: 'https://api.allorigins.win/get?url=' + enc, parser: 'wrapper' });
+  gws.push({ name: 'CORSProxy.org', url: 'https://corsproxy.org/?' + enc, parser: 'direct' });
+  gws.push({ name: 'YACDN', url: 'https://yacdn.org/serve/' + target, parser: 'direct' });
+  gws.push({ name: 'CORS Anywhere', url: 'https://cors-anywhere.herokuapp.com/' + target, parser: 'direct' });
+
+  return gws;
+}
+
+function fallbackBrady(msg) {
+  STATE.gpsData = {
+    rate: CONFIG.BRADISISMO_FALLBACK.rate_cm_mese,
+    err: CONFIG.BRADISISMO_FALLBACK.err_cm_mese,
+    status: 'ok', source: 'static', updated: null
+  };
+  $('gpsRateValue').textContent = '10 ±3 mm/mese';
+  $('gpsCmMonth').textContent = '1.0 cm/mese';
+  const tag = $('bradyTag');
+  if (tag) tag.textContent = 'UFFICIALE (STATICO)';
+  updateBradyStatus('warn', msg);
+  updateDynamicThresholdUI();
+}
+
+async function fetchBradysism() {
+  updateBradyStatus('loading', 'Lettura automatica bollettino INGV OV (via proxy CORS)...');
+  const gws = buildOVGateways();
+  let text = null;
+  let used = null;
+  for (const gw of gws) {
+    try {
+      const res = await fetchWithTimeout(gw.url, 6000, gw.headers);
+      if (!res.ok) continue;
+      let t = null;
+      if (gw.parser === 'wrapper') {
+        const w = await res.json();
+        t = w.contents || null;
+      } else {
+        t = await res.text();
+      }
+      if (t && t.indexOf('mm/mese') !== -1) { text = t; used = gw.name; break; }
+    } catch (e) { /* prossimo gateway */ }
+  }
+  if (!text) { fallbackBrady('Lettura automatica non disponibile — resta ultimo valore ufficiale'); return; }
+
+  const re = /circa\s+(\d+(?:[.,]\d+)?)\s*±\s*(\d+(?:[.,]\d+)?)\s*mm\/mese/g;
+  let m, last = null;
+  while ((m = re.exec(text)) !== null) last = m;
+  if (!last) { fallbackBrady('Valore non trovato nel bollettino — resta ultimo valore ufficiale'); return; }
+
+  const mm = parseFloat(last[1].replace(',', '.'));
+  const err = parseFloat(last[2].replace(',', '.'));
+  STATE.gpsData = { rate: mm / 10, err: err / 10, status: 'ok', source: 'live', updated: new Date() };
+  $('gpsRateValue').textContent = mm.toFixed(0) + ' ±' + err.toFixed(0) + ' mm/mese';
+  $('gpsCmMonth').textContent = (mm / 10).toFixed(1) + ' cm/mese';
+  const tag = $('bradyTag');
+  if (tag) tag.textContent = 'LIVE INGV OV';
+  updateBradyStatus('ok', 'Fonte: INGV OV via ' + used + ' · ' + itTime(new Date(), false));
+  updateDynamicThresholdUI();
+}
+
+function startBradyRefresh() {
+  fetchBradysism();
+  setInterval(fetchBradysism, CONFIG.BRADY_REFRESH);
+}
+
+function eventItemHTML(ev, i) {
+  const t = parseINGVTime(ev.time);
+  const dateStr = itDate(t) + ' ' + itTime(t, true);
+  const magColor = ev.mag >= 3 ? 'var(--danger-hi)' : ev.mag >= 2 ? 'var(--warn)' : 'var(--accent-hi)';
+  const badge = ev.mag >= CONFIG.STRONG_QUAKE_MAG ? '<span class="ev-badge strong">SCOSSA FORTE</span>'
+              : ev.mag >= CONFIG.MIRROR_MIN_MAG ? '<span class="ev-badge off">UFFICIALE</span>' : '';
+  const strongCls = ev.mag >= CONFIG.STRONG_QUAKE_MAG ? ' strong-quake' : '';
+  return '<div class="event-item' + strongCls + '" data-evidx="' + i + '" title="Tocca per vedere sulla mappa">' +
+    '<div class="mag" style="color:' + magColor + '">' + ev.mag.toFixed(1) + '</div>' +
+    '<div class="info">' +
+    '<strong>Terremoto magnitudo ' + ev.mag.toFixed(1) + ' (' + ev.magType + ')' + badge + '</strong>' +
+    '<div>' + dateStr + ' (ora italiana)</div>' +
+    '<div class="meta">Prof ' + ev.depth.toFixed(1) + ' km · Lat ' + ev.lat.toFixed(3) + ' · Lon ' + ev.lon.toFixed(3) + '</div>' +
+    '<div class="meta">ID INGV: ' + ev.id + '</div>' +
+    '</div>' +
+    '<div class="ev-actions">' +
+    '<button data-act="map" title="Vedi sulla mappa">🗺️</button>' +
+    '<button data-act="3d" title="Vedi nel vulcano 3D">🧊</button>' +
+    '<a data-act="ingv" href="https://terremoti.ingv.it/event/' + ev.id + '" target="_blank" rel="noopener" title="Verifica su sito ufficiale INGV">↗</a>' +
+    '</div></div>';
+}
+
+function renderINGVEvents(events) {
+  const list = $('ingvList');
+  if (!events.length) {
+    $('mirrorCounts').textContent = '';
+    list.innerHTML = '<div class="small" style="text-align:center;padding:20px;font-family:var(--sans);font-size:14px;">Nessun terremoto negli ultimi 7 giorni nella zona dei Campi Flegrei.</div>';
+    return;
+  }
+
+  const official = [], micro = [];
+  events.forEach((ev, i) => { (ev.mag >= CONFIG.MIRROR_MIN_MAG ? official : micro).push(i); });
+
+  $('mirrorCounts').textContent =
+    official.length + ' scosse ufficiali (M≥2.0, come lista INGV) · ' + micro.length + ' micro-scosse';
+
+  let html = '';
+  if (official.length) {
+    html += official.map(i => eventItemHTML(events[i], i)).join('');
+  } else {
+    html += '<div class="small" style="text-align:center;padding:14px;font-family:var(--sans);font-size:13px;">Nessuna scossa M≥2.0 negli ultimi 7 giorni. Vedi micro-scosse qui sotto.</div>';
+  }
+
+  html += '<div class="micro-toggle" id="microToggle">' +
+      '<i class="fa-solid fa-chevron-right" id="microChevron"></i>' +
+      '<span>Micro-scosse sotto 2.0 — reali ma non nella lista ufficiale (' + micro.length + ') — tocca per vedere</span>' +
+    '</div>' +
+    '<div id="microList" class="micro-list hidden">' +
+    micro.map(i => eventItemHTML(events[i], i)).join('') +
+    '</div>';
+
+  list.innerHTML = html;
+}
+
+function focusOnMap(ev) {
+  switchTab('gis');
+  const wait = STATE.maps.full ? 120 : 500;
+  setTimeout(() => {
+    const map = STATE.maps.full;
+    if (!map) return;
+    map.setView([ev.lat, ev.lon], 13);
+    if (map._focusMarker) map.removeLayer(map._focusMarker);
+    map._focusMarker = L.circleMarker([ev.lat, ev.lon], {
+      radius: 16, color: '#f59e0b', weight: 3, fillColor: '#f59e0b', fillOpacity: 0.15
+    }).addTo(map);
+    map._focusMarker.bindPopup(
+      '<strong>Terremoto M' + ev.mag.toFixed(1) + '</strong><br>' +
+      itFull(parseINGVTime(ev.time)) + ' (ora italiana)<br>' +
+      'Profondità ' + ev.depth.toFixed(1) + ' km<br>' +
+      '<a href="https://terremoti.ingv.it/event/' + ev.id + '" target="_blank" rel="noopener">Scheda ufficiale INGV ↗</a>'
+    ).openPopup();
+  }, wait);
+}
+
+function focusOn3D(ev) {
+  switchTab('three');
+  let tries = 0;
+  const tryFocus = () => {
+    if (STATE.three && STATE.three.focusEvent) {
+      STATE.three.focusEvent(ev);
+    } else if (tries++ < 30) {
+      setTimeout(tryFocus, 300);
+    }
+  };
+  tryFocus();
+}
+
+function startINGVAutoRefresh() {
+  fetchINGVData();
+  setInterval(() => fetchINGVData(), CONFIG.INGV_REFRESH);
+}
+
+function initMap() {
+  if (typeof L === 'undefined') return;
+  const map = L.map('mapMini', { zoomControl: false, attributionControl: false, dragging: false }).setView([40.827, 14.125], 11);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 18, subdomains: 'abcd'
+  }).addTo(map);
+
+  L.circle([40.8272, 14.1372], { radius: 5500, color: '#dc2626', fillColor: '#dc2626', fillOpacity: 0.15, weight: 2 }).addTo(map);
+
+  L.marker([40.8272, 14.1372], {
+    icon: L.divIcon({ html: '<div style="background:#f97316;width:14px;height:14px;border-radius:50%;border:2px solid #fff;"></div>', iconSize: [14,14], iconAnchor: [7,7] })
+  }).addTo(map).bindPopup('<strong>Solfatara</strong><br>Vulcano attivo di riferimento');
+
+  STATE.maps.mini = map;
+}
+
+function initMapFull() {
+  if (typeof L === 'undefined') return;
+  const map = L.map('mapFull', { zoomControl: true }).setView([40.82, 14.12], 12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 18, subdomains: 'abcd',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> · © CARTO'
+  }).addTo(map);
+
+  L.circle([40.8272, 14.1372], { radius: 9000, color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.08, weight: 2, dashArray: '5,5' }).addTo(map);
+  L.circle([40.8272, 14.1372], { radius: 5500, color: '#dc2626', fillColor: '#dc2626', fillOpacity: 0.18, weight: 2 }).addTo(map);
+
+  L.marker([40.8272, 14.1372], {
+    icon: L.divIcon({ html: '<div style="background:#f97316;width:18px;height:18px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 10px #f97316;"></div>', iconSize: [18,18], iconAnchor: [9,9] })
+  }).addTo(map).bindPopup('<strong>Solfatara di Pozzuoli</strong><br>Vulcano attivo · Zona craterica');
+
+  SAFE_AREAS.forEach(a => {
+    const color = a.type === 'attesa' ? '#10b981' : '#06b6d4';
+    const label = a.type === 'attesa' ? '🟢 Dove aspettare i soccorsi' : '🔵 Punto di incontro';
+    L.marker([a.lat, a.lon], {
+      icon: L.divIcon({ html: '<div style="background:' + color + ';width:12px;height:12px;border-radius:50%;border:2px solid #fff;"></div>', iconSize: [12,12], iconAnchor: [6,6] })
+    }).addTo(map).bindPopup('<strong>' + label + '</strong><br>' + a.name);
+  });
+
+  STATE.maps.full = map;
+  setTimeout(() => map.invalidateSize(), 200);
+}
+
+function updateMapMarkers(events) {
+  if (!STATE.maps.mini) return;
+  if (STATE.maps.mini._eventLayer) STATE.maps.mini.removeLayer(STATE.maps.mini._eventLayer);
+  const group = L.layerGroup();
+  events.slice(0, 10).forEach(ev => {
+    const size = 4 + ev.mag * 2;
+    L.circleMarker([ev.lat, ev.lon], {
+      radius: size, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.6, weight: 1
+    }).bindPopup('Terremoto M' + ev.mag.toFixed(1) + ' · ' + itFull(parseINGVTime(ev.time)) + ' (ora italiana)').addTo(group);
+  });
+  group.addTo(STATE.maps.mini);
+  STATE.maps.mini._eventLayer = group;
+}
+
+function updateMapMarkersFull(events) {
+  if (!STATE.maps.full) return;
+  if (STATE.maps.full._eventLayer) STATE.maps.full.removeLayer(STATE.maps.full._eventLayer);
+  const group = L.layerGroup();
+  events.forEach(ev => {
+    const size = 4 + ev.mag * 2.5;
+    L.circleMarker([ev.lat, ev.lon], {
+      radius: size, color: '#ef4444', fillColor: '#fca5a5', fillOpacity: 0.7, weight: 1
+    }).bindPopup('<strong>Terremoto M' + ev.mag.toFixed(1) + '</strong><br>Profondità: ' + ev.depth.toFixed(1) + ' km<br>' + itFull(parseINGVTime(ev.time)) + ' (ora italiana)').addTo(group);
+  });
+  group.addTo(STATE.maps.full);
+  STATE.maps.full._eventLayer = group;
+}
+
+function onUserPos(pos) {
+  STATE.userPos = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
+  STATE.currentGeoZone = getGeoZone(STATE.userPos.lat, STATE.userPos.lon);
+  updateDynamicThresholdUI();
+  updateUserPosUI(pos);
+
+  if (STATE.maps.mini) {
+    placeUserLayers(STATE.maps.mini, pos, true);
+    if (!STATE.userFirstFix) STATE.maps.mini.setView([pos.coords.latitude, pos.coords.longitude], 12);
+  }
+  if (STATE.maps.full) {
+    placeUserLayers(STATE.maps.full, pos, false);
+    if (!STATE.userFirstFix) STATE.maps.full.setView([pos.coords.latitude, pos.coords.longitude], 13);
+  }
+  STATE.userFirstFix = true;
+}
+
+function onUserPosError(err) {
+  console.warn('GPS error:', err && err.message);
+  updateUserPosError(err);
+}
+
+function updateUserPosUI(pos) {
+  const el = $('gpsUserStatus');
+  if (!el) return;
+  const acc = Math.round(pos.coords.accuracy || 0);
+  const mode = acc <= 50 ? 'GPS' : 'approssimata (rete/Wi-Fi)';
+  el.innerHTML = '<i class="fa-solid fa-location-dot" style="color:var(--ok);"></i> ' +
+    'Tua posizione: ' + pos.coords.latitude.toFixed(4) + ', ' + pos.coords.longitude.toFixed(4) +
+    ' · ±' + acc + ' m · ' + mode + ' ✓';
+  el.style.color = 'var(--fg-1)';
+}
+
+function updateUserPosError(err) {
+  const el = $('gpsUserStatus');
+  if (!el) return;
+  let msg = 'GPS non disponibile: attiva la localizzazione nelle impostazioni del telefono.';
+  if (err && err.code === 1) msg = 'Permesso GPS negato: attivalo dalle impostazioni per vedere casa tua sulla mappa.';
+  else if (err && err.code === 3) msg = 'Segnale GPS debole: riprovo anche con posizione approssimata (rete).';
+  el.innerHTML = '<i class="fa-solid fa-location-crosshairs" style="color:var(--warn);"></i> ' + msg;
+  el.style.color = 'var(--warn)';
+}
+
+function placeUserLayers(map, pos, isMini) {
+  const lat = pos.coords.latitude, lon = pos.coords.longitude;
+  const acc = Math.max(5, pos.coords.accuracy || 10);
+  if (map._userMarker) map.removeLayer(map._userMarker);
+  if (map._userAcc) map.removeLayer(map._userAcc);
+  map._userAcc = L.circle([lat, lon], {
+    radius: acc, color: '#a78bfa', weight: 1, dashArray: '4,4',
+    fillColor: '#a78bfa', fillOpacity: 0.12
+  }).addTo(map);
+  map._userMarker = L.circleMarker([lat, lon], {
+    radius: isMini ? 8 : 10, color: '#a78bfa', fillColor: '#c4b5fd', fillOpacity: 0.9, weight: isMini ? 2 : 3
+  }).addTo(map).bindPopup('📍 Casa tua (sei qui)');
+}
+
+function trackUserLocation() {
+  if (!('geolocation' in navigator)) {
+    onUserPosError({ code: 0 });
+    return;
+  }
+  const hiOpts = { enableHighAccuracy: true, maximumAge: 0, timeout: CONFIG.GEO_TIMEOUT_HI };
+  const loOpts = { enableHighAccuracy: false, maximumAge: 60000, timeout: CONFIG.GEO_TIMEOUT_LO };
+  let loStarted = false;
+  const startLo = () => {
+    if (loStarted) return;
+    loStarted = true;
+    try { navigator.geolocation.watchPosition(onUserPos, onUserPosError, loOpts); } catch (e) { }
+  };
+  try {
+    navigator.geolocation.watchPosition(onUserPos, (err) => {
+      onUserPosError(err);
+      if (!STATE.userFirstFix) startLo();
+    }, hiOpts);
+  } catch (e) { startLo(); }
+  setTimeout(() => { if (!STATE.userFirstFix) startLo(); }, 5000);
+  setInterval(() => {
+    if (!STATE.userFirstFix) {
+      try { navigator.geolocation.getCurrentPosition(onUserPos, onUserPosError, loOpts); } catch (e) { }
+    }
+  }, CONFIG.GEO_RETRY);
+}
+
+/* ============================================================
+   THREE.JS (invariato da v1.8.3 — auto-HW)
+   ============================================================ */
+async function initThreeJS() {
+  if (STATE.three || STATE.threeLoading) return;
+  if (typeof document === 'undefined') return;
+
+  const container = $('threeContainer');
+  if (!container) return;
+
+  STATE.threeLoading = true;
+  const loadingEl = $('threeLoading');
+  if (loadingEl) loadingEl.classList.remove('hidden');
+
+  let THREE;
+  try {
+    THREE = await import('https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js');
+  } catch (e) {
+    console.error('[Three.js] Import ESM fallito:', e);
+    if (loadingEl) {
+      loadingEl.innerHTML = '<div style="color:var(--danger-hi);">' +
+        '<i class="fa-solid fa-triangle-exclamation"></i> Errore caricamento 3D<br>' +
+        '<span class="small">' + e.message + '</span></div>';
+    }
+    STATE.threeLoading = false;
+    return;
+  }
+
+  if (loadingEl) loadingEl.classList.add('hidden');
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a12);
+  scene.fog = new THREE.Fog(0x0a0a12, 8, 25);
+
+  const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 100);
+  camera.position.set(6, 5, 6);
+  camera.lookAt(0, 0, 0);
+
+  const dpr = window.devicePixelRatio || 1;
+  const devMem = navigator.deviceMemory || 8;
+  const cores = navigator.hardwareConcurrency || 4;
+
+  const tierPR = [1.0, Math.min(dpr, 1.2), Math.min(dpr, 1.5)];
+  const tierSEG = [64, 96, 128];
+  const tierPulse = [0, 2, 1];
+  let tier = (!IS_MOBILE && cores >= 8 && devMem >= 8) ? 2 : (!IS_MOBILE || devMem >= 6) ? 1 : 0;
+  const initialTier = tier;
+
+  const renderer = new THREE.WebGLRenderer({ antialias: tier > 0, powerPreference: 'high-performance' });
+  let currentPixelRatio = tierPR[tier];
+  renderer.setPixelRatio(currentPixelRatio);
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  container.insertBefore(renderer.domElement, container.firstChild);
+
+  scene.add(new THREE.AmbientLight(0x606080, 0.5));
+  const dirLight = new THREE.DirectionalLight(0xfff0dd, 0.8);
+  dirLight.position.set(5, 10, 5);
+  scene.add(dirLight);
+
+  const C_MN = { x: lonToX(14.0933), z: latToZ(40.8433) };
+  const C_SF = { x: lonToX(14.1372), z: latToZ(40.8272) };
+  const C_AV = { x: lonToX(14.0560), z: latToZ(40.8160) };
+  const C_AS = { x: lonToX(14.1660), z: latToZ(40.8330) };
+  const C_BW = { x: lonToX(14.0780), z: latToZ(40.8060) };
+  const SRC_X = lonToX(CONFIG.RIONE_TERRA.lon);
+  const SRC_Z = latToZ(CONFIG.RIONE_TERRA.lat);
+  const SRC_Y = depthToY(CONFIG.DEPTH_SOURCE);
+
+  const pointLight = new THREE.PointLight(0xf97316, 2, 10);
+  pointLight.position.set(SRC_X, SRC_Y + 0.5, SRC_Z);
+  scene.add(pointLight);
+
+  const demMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uColorLow: { value: new THREE.Color(0x1a1a2e) },
+      uColorHigh: { value: new THREE.Color(0x4a3c5a) },
+      uWaterLevel: { value: -0.3 }
+    },
+    vertexShader: [
+      'varying float vHeight;',
+      'varying vec2 vUv;',
+      'uniform float uTime;',
+      'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+      'float noise(vec2 p) {',
+      '  vec2 i = floor(p), f = fract(p);',
+      '  float a = hash(i), b = hash(i + vec2(1,0)), c = hash(i + vec2(0,1)), d = hash(i + vec2(1,1));',
+      '  vec2 u = f * f * (3.0 - 2.0 * f);',
+      '  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);',
+      '}',
+      'void main() {',
+      '  vUv = uv;',
+      '  vec3 pos = position;',
+      '  vec2 p = pos.xz;',
+      '  float h = 0.0;',
+      '  vec2 cc = p - vec2(0.0, 0.8);',
+      '  h += -1.15 * exp(-(cc.x*cc.x/9.0 + cc.y*cc.y/6.5));',
+      '  vec2 mn = p - vec2(' + C_MN.x.toFixed(2) + ', ' + C_MN.z.toFixed(2) + ');',
+      '  h += 0.8 * exp(-dot(mn, mn)/0.5);',
+      '  vec2 sf = p - vec2(' + C_SF.x.toFixed(2) + ', ' + C_SF.z.toFixed(2) + ');',
+      '  float sfd = length(sf);',
+      '  h += -0.18 * exp(-sfd*sfd/0.06) + 0.12 * exp(-pow(sfd - 0.35, 2.0)/0.03);',
+      '  vec2 av = p - vec2(' + C_AV.x.toFixed(2) + ', ' + C_AV.z.toFixed(2) + ');',
+      '  h += -0.22 * exp(-dot(av, av)/0.12);',
+      '  vec2 as = p - vec2(' + C_AS.x.toFixed(2) + ', ' + C_AS.z.toFixed(2) + ');',
+      '  h += -0.25 * exp(-dot(as, as)/0.2);',
+      '  h += noise(p * 1.5) * 0.3 + noise(p * 3.0) * 0.15 + noise(p * 6.0) * 0.06;',
+      '  float seaS = smoothstep(3.2, 5.2, p.y + 0.6 * sin(p.x * 0.45));',
+      '  vec2 bw = p - vec2(' + C_BW.x.toFixed(2) + ', ' + C_BW.z.toFixed(2) + ');',
+      '  float seaW = smoothstep(0.55, 0.75, exp(-dot(bw, bw)/2.2));',
+      '  h += max(seaS, seaW) * -1.4;',
+      '  pos.y = h;',
+      '  vHeight = h;',
+      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);',
+      '}'
+    ].join('\n'),
+    fragmentShader: [
+      'varying float vHeight;',
+      'varying vec2 vUv;',
+      'uniform vec3 uColorLow, uColorHigh;',
+      'uniform float uWaterLevel;',
+      'void main() {',
+      '  vec3 col = mix(uColorLow, uColorHigh, smoothstep(-1.5, 0.3, vHeight));',
+      '  if (vHeight < uWaterLevel) col = mix(vec3(0.05, 0.1, 0.2), vec3(0.1, 0.2, 0.4), (vHeight + 1.5) / 1.5);',
+      '  vec2 g = abs(fract(vUv * 20.0) - 0.5);',
+      '  float grid = min(g.x, g.y);',
+      '  if (grid < 0.02) col += 0.15;',
+      '  gl_FragColor = vec4(col, 1.0);',
+      '}'
+    ].join('\n')
+  });
+  const firstGeo = new THREE.PlaneGeometry(14, 14, tierSEG[tier], tierSEG[tier]);
+  firstGeo.rotateX(-Math.PI / 2);
+  firstGeo.userData.seg = tierSEG[tier];
+  let dem = new THREE.Mesh(firstGeo, demMat);
+  dem.matrixAutoUpdate = false;
+  dem.updateMatrix();
+  scene.add(dem);
+
+  function applyTier(t) {
+    tier = t;
+    currentPixelRatio = tierPR[t];
+    renderer.setPixelRatio(currentPixelRatio);
+    const seg = tierSEG[t];
+    if (dem.geometry.userData.seg !== seg) {
+      const g = new THREE.PlaneGeometry(14, 14, seg, seg);
+      g.rotateX(-Math.PI / 2);
+      g.userData.seg = seg;
+      dem.geometry.dispose();
+      dem.geometry = g;
+    }
+    const qEl = $('qTier');
+    if (qEl) qEl.textContent = 'T' + t;
+  }
+  applyTier(tier);
+
+  const layerColors = [0xeab308, 0xdc2626, 0x7c3aed];
+  const layerDepths = [depthToY(0.5), depthToY(2.0), depthToY(CONFIG.DEPTH_SILL)];
+  const layerOpacities = [0.12, 0.18, 0.22];
+  layerDepths.map((depth, i) => {
+    const geo = new THREE.PlaneGeometry(14, 14);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      color: layerColors[i], transparent: true, opacity: layerOpacities[i],
+      side: THREE.DoubleSide, depthWrite: false
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.y = depth;
+    m.matrixAutoUpdate = false;
+    m.updateMatrix();
+    scene.add(m);
+    return m;
+  });
+
+  const magmaGeo = new THREE.SphereGeometry(0.5, 32, 24);
+  const magmaMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uActivity: { value: 0.3 },
+      uColor: { value: new THREE.Color(0xf97316) }
+    },
+    vertexShader: [
+      'varying vec3 vNormal, vPos;',
+      'uniform float uTime;',
+      'uniform float uActivity;',
+      'void main() {',
+      '  vNormal = normalize(normalMatrix * normal);',
+      '  vec3 pos = position;',
+      '  pos += normal * (sin(uTime * (1.0 + 2.0 * uActivity) + position.y * 3.0) * 0.05);',
+      '  vPos = pos;',
+      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);',
+      '}'
+    ].join('\n'),
+    fragmentShader: [
+      'varying vec3 vNormal, vPos;',
+      'uniform vec3 uColor;',
+      'uniform float uTime;',
+      'uniform float uActivity;',
+      'void main() {',
+      '  float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0,0,1))), 2.0);',
+      '  float glow = 0.4 + 0.6 * uActivity;',
+      '  vec3 col = uColor * glow * (0.6 + 0.4 * fresnel) * (1.0 + sin(uTime * (1.0 + 2.0 * uActivity)) * 0.1);',
+      '  gl_FragColor = vec4(col, 0.85);',
+      '}'
+    ].join('\n'),
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  const magma = new THREE.Mesh(magmaGeo, magmaMat);
+  magma.position.set(SRC_X, SRC_Y, SRC_Z);
+  magma.matrixAutoUpdate = false;
+  magma.updateMatrix();
+  scene.add(magma);
+
+  const MAX_EVENTS = 2000;
+  const quakeGeo = new THREE.SphereGeometry(0.05, 8, 6);
+  const quakeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const swarm = new THREE.InstancedMesh(quakeGeo, quakeMat, MAX_EVENTS);
+  swarm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  swarm.count = 0;
+  const swarmColors = new Float32Array(MAX_EVENTS * 3);
+  swarm.instanceColor = new THREE.InstancedBufferAttribute(swarmColors, 3);
+  scene.add(swarm);
+
+  const posArr = new Float32Array(MAX_EVENTS * 3);
+  const baseScales = new Float32Array(MAX_EVENTS);
+  const _m4 = new THREE.Matrix4();
+  const _pos = new THREE.Vector3();
+  const _quat = new THREE.Quaternion();
+  const _scl = new THREE.Vector3();
+
+  const rulerGroup = new THREE.Group();
+  const rulerMat = new THREE.MeshBasicMaterial({ color: 0x8a8aa0, transparent: true, opacity: 0.7 });
+  const rulerLine = new THREE.Mesh(new THREE.BoxGeometry(0.02, 2.0, 0.02), rulerMat);
+  rulerLine.position.set(6.5, -1.0, 6.5);
+  rulerGroup.add(rulerLine);
+  const makeTextSprite = (text) => {
+    const cvs = document.createElement('canvas');
+    cvs.width = 128; cvs.height = 64;
+    const ctx = cvs.getContext('2d');
+    ctx.font = 'bold 36px monospace';
+    ctx.fillStyle = 'rgba(240,240,245,0.9)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 64, 32);
+    const tex = new THREE.CanvasTexture(cvs);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+    const sp = new THREE.Sprite(mat);
+    sp.scale.set(1.0, 0.5, 1);
+    return sp;
+  };
+  for (let km = 0; km <= 4; km++) {
+    const y = depthToY(km);
+    const tick = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, 0.02), rulerMat);
+    tick.position.set(6.35, y, 6.5);
+    rulerGroup.add(tick);
+    const lbl = makeTextSprite(km + ' km');
+    lbl.position.set(5.6, y, 6.5);
+    rulerGroup.add(lbl);
+  }
+  scene.add(rulerGroup);
+
+  const focusRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.35, 0.5, 32),
+    new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false })
+  );
+  focusRing.rotation.x = -Math.PI / 2;
+  focusRing.position.y = 0.2;
+  focusRing.visible = false;
+  scene.add(focusRing);
+
+  const waveGeo = new THREE.PlaneGeometry(20, 20, 1, 1);
+  waveGeo.rotateX(-Math.PI / 2);
+  const waveMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uPWaveStart: { value: -1.0 },
+      uSWaveStart: { value: -1.0 },
+      uVP: { value: CONFIG.VP_KMS * CONFIG.UNITS_PER_KM },
+      uVS: { value: CONFIG.VS_KMS * CONFIG.UNITS_PER_KM },
+      uCenter: { value: new THREE.Vector2(0, 0) }
+    },
+    vertexShader: [
+      'varying vec2 vPos;',
+      'void main() {',
+      '  vPos = position.xz;',
+      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+      '}'
+    ].join('\n'),
+    fragmentShader: [
+      'varying vec2 vPos;',
+      'uniform float uTime, uPWaveStart, uSWaveStart, uVP, uVS;',
+      'uniform vec2 uCenter;',
+      'void main() {',
+      '  float r = length(vPos - uCenter);',
+      '  vec4 col = vec4(0.0);',
+      '  if (uPWaveStart >= 0.0) {',
+      '    float rp = (uTime - uPWaveStart) * uVP;',
+      '    float dp = abs(r - rp);',
+      '    if (dp < 0.2) {',
+      '      float intensity = (1.0 - dp / 0.2) * exp(-(uTime - uPWaveStart) * 0.3);',
+      '      col += vec4(0.0, 0.8, 1.0, 1.0) * intensity;',
+      '    }',
+      '  }',
+      '  if (uSWaveStart >= 0.0) {',
+      '    float rs = (uTime - uSWaveStart) * uVS;',
+      '    float ds = abs(r - rs);',
+      '    if (ds < 0.3) {',
+      '      float intensity = (1.0 - ds / 0.3) * exp(-(uTime - uSWaveStart) * 0.25);',
+      '      col += vec4(1.0, 0.2, 0.2, 1.0) * intensity;',
+      '    }',
+      '  }',
+      '  gl_FragColor = vec4(col.rgb, col.a);',
+      '}'
+    ].join('\n'),
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  const wavePlane = new THREE.Mesh(waveGeo, waveMat);
+  wavePlane.position.y = 0.1;
+  wavePlane.matrixAutoUpdate = false;
+  wavePlane.updateMatrix();
+  scene.add(wavePlane);
+
+  let isDragging = false, prevX = 0, prevY = 0;
+  let theta = Math.PI / 4, phi = Math.PI / 3, radius = 8;
+
+  function updateCamera() {
+    camera.position.x = radius * Math.sin(phi) * Math.cos(theta);
+    camera.position.y = radius * Math.cos(phi);
+    camera.position.z = radius * Math.sin(phi) * Math.sin(theta);
+    camera.lookAt(0, -0.5, 0);
+  }
+  updateCamera();
+
+  renderer.domElement.addEventListener('pointerdown', (e) => {
+    isDragging = true; prevX = e.clientX; prevY = e.clientY;
+  });
+  renderer.domElement.addEventListener('pointermove', (e) => {
+    if (!isDragging) return;
+    theta -= (e.clientX - prevX) * 0.008;
+    phi = Math.max(0.2, Math.min(Math.PI - 0.2, phi - (e.clientY - prevY) * 0.008));
+    prevX = e.clientX; prevY = e.clientY;
+    updateCamera();
+  });
+  renderer.domElement.addEventListener('pointerup', () => isDragging = false);
+  renderer.domElement.addEventListener('pointercancel', () => isDragging = false);
+  renderer.domElement.addEventListener('wheel', (e) => {
+    radius = Math.max(3, Math.min(15, radius + e.deltaY * 0.005));
+    updateCamera();
+  }, { passive: true });
+
+  let pinchDist = 0;
+  renderer.domElement.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchDist = Math.sqrt(dx*dx + dy*dy);
+    }
+  }, { passive: true });
+  renderer.domElement.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      radius = Math.max(3, Math.min(15, radius - (d - pinchDist) * 0.02));
+      pinchDist = d;
+      updateCamera();
+    }
+  }, { passive: true });
+
+  let fpsHistory = [], lastFrameTime = performance.now();
+  let lowSince = 0, highSince = 0;
+
+  renderer.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault());
+
+  let startTime = performance.now();
+  let frameCount = 0, lastFpsUpdate = startTime;
+  let frameParity = 0;
+  const waveLiveEl = $('waveLive');
+  const focusInfoEl = $('focusInfo');
+
+  function animate() {
+    if (!STATE.three || STATE.three.disposed) return;
+    requestAnimationFrame(animate);
+
+    const now = performance.now();
+    const dt = now - lastFrameTime;
+    lastFrameTime = now;
+    const currentFps = 1000 / Math.max(1, dt);
+    fpsHistory.push(currentFps);
+    if (fpsHistory.length > 30) fpsHistory.shift();
+    const avgFps = fpsHistory.reduce((a,b)=>a+b,0) / fpsHistory.length;
+
+    if (avgFps < 30) {
+      if (!lowSince) lowSince = now;
+      else if (now - lowSince > 2500 && tier > 0) { applyTier(tier - 1); lowSince = 0; highSince = 0; }
+    } else lowSince = 0;
+    if (avgFps > 55) {
+      if (!highSince) highSince = now;
+      else if (now - highSince > 6000 && tier < initialTier) { applyTier(tier + 1); highSince = 0; }
+    } else highSince = 0;
+
+    const t = (now - startTime) / 1000;
+    STATE.three.clockT = t;
+    demMat.uniforms.uTime.value = t;
+    magmaMat.uniforms.uTime.value = t;
+    waveMat.uniforms.uTime.value = t;
+
+    if (waveLiveEl) waveLiveEl.style.display = (t - STATE.three.lastWaveAt < 8) ? '' : 'none';
+
+    if (focusRing.visible) {
+      const age = t - STATE.three.lastFocusAt;
+      if (age > 10) {
+        focusRing.visible = false;
+        if (focusInfoEl) focusInfoEl.style.display = 'none';
+      } else {
+        focusRing.material.opacity = 0.5 + 0.4 * Math.sin(t * 6);
+        const sc = 1 + 0.15 * Math.sin(t * 3);
+        focusRing.scale.set(sc, sc, sc);
+      }
+    }
+
+    frameParity ^= 1;
+    const pm = tierPulse[tier];
+    const doPulse = pm === 1 ? (!IS_MOBILE || frameParity === 0) : pm === 2 ? (frameParity === 0) : false;
+    if (swarm.count > 0 && !document.hidden && doPulse) {
+      for (let i = 0; i < swarm.count; i++) {
+        const s = baseScales[i] * (1 + Math.sin(t * 4 + i) * 0.15);
+        _pos.set(posArr[i*3], posArr[i*3+1], posArr[i*3+2]);
+        _scl.setScalar(s);
+        _m4.compose(_pos, _quat, _scl);
+        swarm.setMatrixAt(i, _m4);
+      }
+      swarm.instanceMatrix.needsUpdate = true;
+    }
+
+    renderer.render(scene, camera);
+
+    frameCount++;
+    if (now - lastFpsUpdate > 500) {
+      const fps = (frameCount * 1000) / (now - lastFpsUpdate);
+      $('fpsCounter').textContent = fps.toFixed(0);
+      $('drsLevel').textContent = currentPixelRatio.toFixed(2);
+      frameCount = 0;
+      lastFpsUpdate = now;
+    }
+  }
+
+  STATE.three = {
+    scene: scene, camera: camera, renderer: renderer, swarm: swarm, MAX_EVENTS: MAX_EVENTS,
+    waveMat: waveMat, magmaMat: magmaMat, demMat: demMat,
+    posArr: posArr, baseScales: baseScales,
+    clockT: 0, lastWaveAt: -99, lastFocusAt: -99,
+    seenIds: new Set(),
+    setActivity: function(n24) {
+      const act = Math.min(1, n24 / 15);
+      const up = Math.min(1, STATE.gpsData.rate / 3);
+      const a = Math.max(0, Math.min(1, 0.7 * act + 0.3 * up));
+      magmaMat.uniforms.uActivity.value = a;
+    },
+    updateHypocenters: function(events) {
+      const count = Math.min(events.length, MAX_EVENTS);
+      swarm.count = count;
+      for (let i = 0; i < count; i++) {
+        const ev = events[i];
+        const x = lonToX(ev.lon);
+        const z = latToZ(ev.lat);
+        const y = depthToY(ev.depth);
+        posArr[i*3] = x; posArr[i*3+1] = y; posArr[i*3+2] = z;
+        baseScales[i] = Math.pow(10, ev.mag / 2) * 0.03;
+        _pos.set(x, y, z);
+        _scl.setScalar(baseScales[i]);
+        _m4.compose(_pos, _quat, _scl);
+        swarm.setMatrixAt(i, _m4);
+
+        let color;
+        if (ev.depth < 0.5) color = [1, 0.85, 0.2];
+        else if (ev.depth < 2) color = [1, 0.3, 0.3];
+        else if (ev.depth < 3) color = [1, 0.6, 0.2];
+        else color = [0.3, 0.5, 1];
+        swarmColors[i*3] = color[0];
+        swarmColors[i*3+1] = color[1];
+        swarmColors[i*3+2] = color[2];
+      }
+      swarm.instanceMatrix.needsUpdate = true;
+      swarm.instanceColor.needsUpdate = true;
+      $('eventCount3D').textContent = count;
+    },
+    triggerWaves: function(events) {
+      const cutoff = Date.now() - 60 * 60000;
+      for (const ev of events) {
+        if (ev.mag < 2.0) continue;
+        if (parseINGVTime(ev.time).getTime() < cutoff) continue;
+        if (this.seenIds.has(ev.id)) continue;
+        this.seenIds.add(ev.id);
+        this.waveMat.uniforms.uCenter.value.set(lonToX(ev.lon), latToZ(ev.lat));
+        this.waveMat.uniforms.uPWaveStart.value = this.clockT;
+        const rt = stratifiedRayTracing(0.001, ev.depth);
+        this.waveMat.uniforms.uSWaveStart.value = this.clockT + rt.deltaSP;
+        this.lastWaveAt = this.clockT;
+      }
+    },
+    focusEvent: function(ev) {
+      focusRing.position.set(lonToX(ev.lon), 0.2, latToZ(ev.lat));
+      focusRing.visible = true;
+      this.lastFocusAt = this.clockT;
+      if (focusInfoEl) {
+        focusInfoEl.style.display = '';
+        focusInfoEl.textContent = '🎯 M' + ev.mag.toFixed(1) + ' · ' + itTime(parseINGVTime(ev.time), false);
+      }
+    },
+    dispose: function() {
+      this.disposed = true;
+      renderer.dispose();
+    }
+  };
+
+  STATE.three.setActivity(STATE.seismic24h);
+
+  STATE.threeLoading = false;
+  animate();
+
+  window.addEventListener('resize', () => {
+    if (!STATE.three || STATE.three.disposed) return;
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  });
+
+  if (STATE.ingvEvents && STATE.ingvEvents.length > 0) {
+    STATE.three.updateHypocenters(STATE.ingvEvents);
+  }
+}
+
+function update3DHypocenters(events) {
+  if (!STATE.three) return;
+  STATE.three.updateHypocenters(events);
+}
+
+function switchTab(tabId, ev) {
+  document.querySelectorAll('nav.tabs button').forEach(b => {
+    if (ev && ev.currentTarget) b.classList.toggle('active', b === ev.currentTarget);
+    else b.classList.toggle('active', b.dataset.tab === tabId);
+  });
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const view = $('view-' + tabId);
+  if (view) view.classList.add('active');
+
+  if (tabId === 'gis' && !STATE.maps.full) setTimeout(initMapFull, 50);
+  if (tabId === 'three' && !STATE.three) setTimeout(initThreeJS, 50);
+  if (tabId === 'gis' && STATE.maps.full) setTimeout(() => STATE.maps.full.invalidateSize(), 100);
+}
+
+document.querySelectorAll('nav.tabs button').forEach(b => {
+  b.addEventListener('click', (ev) => switchTab(b.dataset.tab, ev));
+});
+
+function setupEventListNav() {
+  $('ingvList').addEventListener('click', (e) => {
+    if (e.target.closest('a')) return;
+    if (e.target.closest('#microToggle')) {
+      const ml = $('microList');
+      if (ml) {
+        ml.classList.toggle('hidden');
+        const ch = $('microChevron');
+        if (ch) ch.style.transform = ml.classList.contains('hidden') ? '' : 'rotate(90deg)';
+      }
+      return;
+    }
+    const item = e.target.closest('[data-evidx]');
+    if (!item) return;
+    const ev = STATE.ingvEvents[parseInt(item.dataset.evidx, 10)];
+    if (!ev) return;
+    const btn = e.target.closest('[data-act]');
+    const act = btn ? btn.dataset.act : 'map';
+    if (act === '3d') focusOn3D(ev);
+    else focusOnMap(ev);
+  });
+}
+
+function setupLegendToggle() {
+  const legend = $('threeLegend');
+  const chevron = $('threeLegendChevron');
+  if (IS_MOBILE) {
+    legend.classList.add('collapsed');
+    chevron.style.transform = 'rotate(-90deg)';
+  }
+  $('threeLegendToggle').addEventListener('click', () => {
+    legend.classList.toggle('collapsed');
+    chevron.style.transform = legend.classList.contains('collapsed') ? 'rotate(-90deg)' : '';
+  });
+}
+
+function openGuide() { $('modalGuide').classList.add('show'); }
+function closeGuide() {
+  $('modalGuide').classList.remove('show');
+  try { localStorage.setItem('sentinelguideseen', '1'); } catch(e) {}
+}
+
+function setupConnectivityMonitor() {
+  const update = () => {
+    STATE.online = navigator.onLine;
+    const badge = $('netBadge');
+    if (STATE.online) {
+      badge.classList.remove('offline');
+      badge.classList.add('online');
+      badge.querySelector('span:last-child').textContent = 'ONLINE';
+    } else {
+      badge.classList.remove('online');
+      badge.classList.add('offline');
+      badge.querySelector('span:last-child').textContent = 'OFFLINE';
+    }
+  };
+  window.addEventListener('online', update);
+  window.addEventListener('offline', update);
+  update();
+}
+
+function setupWakeLockRecovery() {
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && STATE.engineActive) {
+      if (!STATE.wakeLock && 'wakeLock' in navigator) {
+        try { STATE.wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
+      }
+      if (STATE.audioCtx && STATE.audioCtx.state === 'suspended') {
+        try { await STATE.audioCtx.resume(); } catch(e) {}
+      }
+    }
+  });
+}
+
+/* // ponytail: SW blob URL non persistente, migrazione a file sw.js separato */
+const SW_CODE = [
+  "const CACHE_V1 = 'sentinel-cf-v1.8.5';",
+  "const CDN_ASSETS = [",
+  "  'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css',",
+  "  'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',",
+  "  'https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css',",
+  "  'https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/index.min.css',",
+  "  'https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.0.18/index.min.css'",
+  "];",
+  "self.addEventListener('install', (e) => {",
+  "  e.waitUntil(caches.open(CACHE_V1).then(c => c.addAll(CDN_ASSETS).catch(()=>{})));",
+  "  self.skipWaiting();",
+  "});",
+  "self.addEventListener('activate', (e) => {",
+  "  e.waitUntil(caches.keys().then(keys => Promise.all(",
+  "    keys.filter(k => k !== CACHE_V1).map(k => caches.delete(k))",
+  "  ));",
+  "  self.clients.claim();",
+  "});",
+  "self.addEventListener('fetch', (e) => {",
+  "  const url = new URL(e.request.url);",
+  "  if (url.hostname === 'webservices.ingv.it' ||",
+  "      url.hostname.includes('corsproxy') ||",
+  "      url.hostname.includes('allorigins') ||",
+  "      url.hostname.includes('codetabs') ||",
+  "      url.hostname.includes('yacdn') ||",
+  "      url.hostname.includes('herokuapp') ||",
+  "      url.hostname.includes('workers.dev') ||",
+  "      url.hostname.includes('ov.ingv.it')) {",
+  "    e.respondWith(fetch(e.request).catch(() => new Response('{}', {",
+  "      headers: { 'Content-Type': 'application/json' }",
+  "    })));",
+  "    return;",
+  "  }",
+  "  e.respondWith(caches.match(e.request).then(cached => {",
+  "    return cached || fetch(e.request).then(r => {",
+  "      if (r.ok && (url.hostname.includes('cartocdn') || url.hostname.includes('jsdelivr'))) {",
+  "        const copy = r.clone();",
+  "        caches.open(CACHE_V1).then(c => c.put(e.request, copy));",
+  "      }",
+  "      return r;",
+  "    });",
+  "  });",
+  "});"
+].join('\n');
+
+function registerSW() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const blob = new Blob([SW_CODE], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(url).catch(e => {
+      console.info('[SW] Registrazione non riuscita (ambiente non HTTPS/PWA). Limitazione nota, non influisce sul funzionamento:', e.message);
+    });
+  } catch (e) {
+    console.info('[SW] Setup non disponibile in questo ambiente:', e.message);
+  }
+}
+
+async function boot() {
+  setupManifest();
+  setupConnectivityMonitor();
+  setupWakeLockRecovery();
+  registerSW();
+  initWorker();
+  initMap();
+  trackUserLocation();
+  setupEventListNav();
+  setupLegendToggle();
+
+  try {
+    const savedSens = localStorage.getItem('sentinel-sens');
+    if (savedSens && SENS_LEVELS[savedSens]) STATE.sensitivity = savedSens;
+  } catch (e) { }
+  ['alta', 'media', 'bassa'].forEach(l => {
+    const el = $('sens' + l.charAt(0).toUpperCase() + l.slice(1));
+    if (el) {
+      el.classList.toggle('active', l === STATE.sensitivity);
+      el.addEventListener('click', () => setSensitivity(l));
+    }
+  });
+
+  updateProStatus();
+  updateDynamicThresholdUI();
+
+  startINGVAutoRefresh();
+  startBradyRefresh();
+
+  if ('Notification' in window && Notification.permission === 'default') {
+    try { await Notification.requestPermission(); } catch(e) {}
+  }
+
+  try {
+    if (!localStorage.getItem('sentinelguideseen')) {
+      setTimeout(openGuide, 800);
+    }
+  } catch(e) {}
+
+  $('btnToggle').addEventListener('click', toggleSensor);
+  $('btnGuide').addEventListener('click', openGuide);
+
+  console.log('[Seismic Sentinel v1.8.5] Ambiente: ' + STATE.environment + ' · Mobile: ' + IS_MOBILE);
+  console.log('[Seismic Sentinel v1.8.5] Sensibilità: ' + STATE.sensitivity + ' · CF Worker: ' + (ProxyConfig.isConfigured() ? 'SÌ (Pro)' : 'NO'));
+  console.log('[Seismic Sentinel v1.8.5] M1: manifest runtime Blob URL (JSON pulito, zero syntax error)');
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+</script>
+</body>
+</html>
