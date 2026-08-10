@@ -6,7 +6,7 @@
 [![PWA](https://img.shields.io/badge/PWA-Compatible-5A0FC8)](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
 [![HTML5](https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white)](https://developer.mozilla.org/en-US/docs/Glossary/HTML5)
 
-![Visitor Count](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2FRobertoAbbruzzese%2Fseismic-sentinel-cf)
+![Visitors](https://api.visitorbadge.io/api/visitors?path=RobertoAbbruzzese%2Fseismic-sentinel-cf&label=Visitatori&countColor=%23263759)
 
 > **Real-time seismic monitoring, early warning, and bradyseism for the Campi Flegrei volcanic area (Naples).**
 
