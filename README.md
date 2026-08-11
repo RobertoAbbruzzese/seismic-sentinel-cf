@@ -56,4 +56,14 @@ This project was **developed entirely in a browser environment**, without local 
 
 ---
 
+## 📷 Photo
+
+https://github.com/user-attachments/assets/549e9ba8-eac3-4509-a276-54a766140f54
+
+<img width="1836" height="807" alt="Immagine" src="https://github.com/user-attachments/assets/45c68ae0-ce8c-41dd-b814-06b34577232a" />
+<img width="1823" height="805" alt="Immagine2" src="https://github.com/user-attachments/assets/7d583034-38e4-4e8d-8832-732a626bcd4f" />
+<img width="1822" height="793" alt="Immagine23" src="https://github.com/user-attachments/assets/dd215ae5-75eb-4339-8164-6a7e5ed86941" />
+<img width="1839" height="825" alt="Immagine234" src="https://github.com/user-attachments/assets/59edee9e-9ba3-4cfc-99ae-ed9ed93dd37f" />
+
+
 **⚠️ Disclaimer:** This tool is a personal aid based on public INGV data. It **DOES NOT REPLACE** official Civil Protection alerts. In case of emergency, always follow the instructions of the authorities.
